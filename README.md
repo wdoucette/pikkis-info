@@ -46,7 +46,7 @@ Optional env vars (set in `.env.local` or on Vercel; never commit secret or `ser
 
 ## Roadmap
 
-Nothing in this section is built yet.
+Planned features are in [ROADMAP.md](ROADMAP.md). The ideas below cover funding and operations; nothing in this section is built yet.
 
 - **Direct support:** Patreon and/or Ko-fi.
 - **Freemium cloud features:** keep localStorage wardrobe tracking free; charge for cross-device sync and public collections. Today both of those are free for anyone who signs in.
