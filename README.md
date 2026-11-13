@@ -55,6 +55,8 @@ Nothing in this section is built yet.
 - **Cross-promo or revenue share with Nikki Calc** — an idea to approach them, not an agreement.
 - **Custom domain:** `pikkisinfo.com` is the intended name; it has not been purchased yet.
 
+- Consider scraping defenses for the public data bundle (authenticated API serving, Cloudflare bot detection, signed short-lived data URLs, per-IP/session rate limits) — not urgent since the catalog is public by design, but worth evaluating if hotlinking becomes a problem.
+
 ### Housekeeping
 
 The live weekly data job lives in [`pikkis-info-data`](https://github.com/wdoucette/pikkis-info-data). This app repo still has a leftover workflow (`.github/workflows/update-data.yml`), script (`scripts/update_data.py`), and a one-item placeholder at `data/pikkis-info.min.json` that the production site does not use. The Overrides sheet is still private, so Monday's update falls back to the last saved overrides snapshot until the sheet is shared with the job.
