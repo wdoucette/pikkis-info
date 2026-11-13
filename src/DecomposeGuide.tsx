@@ -632,7 +632,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
 
       {loading ? (
         <div aria-busy="true" aria-label="Loading items">
-          <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-700 overflow-clip shadow-sm">
+          <div className="hidden lg:block bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-700 overflow-clip shadow-sm">
             <div className="h-[45px] bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-700" />
             {Array.from({ length: 12 }).map((_, i) => (
               <div key={i} className="h-[53px] px-5 flex items-center gap-6 border-b border-zinc-100 dark:border-zinc-800">
@@ -644,7 +644,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
               </div>
             ))}
           </div>
-          <div className="md:hidden space-y-2">
+          <div className="lg:hidden space-y-2">
             <div className="h-[30px]" />
             {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[92px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl animate-pulse" />)}
           </div>
@@ -658,10 +658,10 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
       ) : (
         <>
           {/* Desktop table */}
-          <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-700 overflow-clip shadow-sm">
+          <div className="hidden lg:block bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-700 overflow-clip shadow-sm">
             <table className="w-full text-sm">
               <caption className="sr-only">Decompose guide items</caption>
-              <thead className="sticky top-[87px] z-10 bg-zinc-50/95 dark:bg-zinc-950/95 backdrop-blur border-b border-zinc-200 dark:border-zinc-700">
+              <thead className="sticky top-[72px] z-10 bg-zinc-50/95 dark:bg-zinc-950/95 backdrop-blur border-b border-zinc-200 dark:border-zinc-700">
                 <tr>
                   <SortHeader k="name" label="Item" className="pl-5" />
                   <SortHeader k="cat" label="Cat" />
@@ -702,7 +702,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
           </div>
 
           {/* Mobile cards */}
-          <div className="md:hidden space-y-2">
+          <div className="lg:hidden space-y-2">
             <div className="flex items-center gap-2 text-xs text-zinc-500 px-1">
               <label htmlFor="mobile-sort">Sort</label>
               <select id="mobile-sort" value={sort} onChange={e => setSort(e.target.value as SortKey)}

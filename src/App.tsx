@@ -102,17 +102,17 @@ function ItemPage({ items, wardrobe, setWardrobe, loading }: { items: Item[]; wa
           </div>
           <div className="grid grid-cols-3 sm:flex gap-2 sm:gap-3 w-full sm:w-auto">
             <button type="button" onClick={() => setEntry({ owned: info.owned > 0 ? 0 : 1 })} aria-pressed={info.owned > 0}
-              className={`w-full sm:w-[118px] px-2 sm:px-4 py-2 border rounded-2xl text-sm inline-flex items-center justify-center gap-2 tabular-nums ${info.owned > 0 ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
+              className={`w-full sm:w-[118px] px-2 sm:px-4 py-2 whitespace-nowrap border rounded-2xl text-[13px] sm:text-sm inline-flex items-center justify-center gap-2 tabular-nums ${info.owned > 0 ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950' : 'border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
               Owned: <span className="font-mono font-bold">{info.owned}</span>
             </button>
             <button type="button" onClick={() => setEntry({ wanted: !wanted })} aria-pressed={wanted} disabled={info.owned > 0}
               title={info.owned > 0 ? 'Already owned' : 'Add to wishlist'}
-              className={`w-full sm:w-[118px] px-2 sm:px-4 py-2 border rounded-2xl text-sm font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-40 ${wanted ? 'bg-violet-100 border-violet-300 text-violet-800 dark:bg-violet-950 dark:text-violet-200 dark:border-violet-700' : 'enabled:hover:bg-zinc-50 dark:enabled:hover:bg-zinc-800'}`}>
+              className={`w-full sm:w-[118px] px-2 sm:px-4 py-2 whitespace-nowrap border rounded-2xl text-[13px] sm:text-sm font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-40 ${wanted ? 'bg-violet-100 border-violet-300 text-violet-800 dark:bg-violet-950 dark:text-violet-200 dark:border-violet-700' : 'border-zinc-300 dark:border-zinc-600 enabled:hover:bg-zinc-50 dark:enabled:hover:bg-zinc-800'}`}>
               <Star className={`w-4 h-4 ${wanted ? 'fill-current' : ''}`} aria-hidden /> {wanted ? 'Wanted' : 'Want'}
             </button>
             <button type="button" onClick={() => setEntry({ done: !info.done })} aria-pressed={info.done}
-              className={`w-full sm:w-[118px] px-2 sm:px-4 py-2 rounded-2xl text-sm font-medium border ${info.done ? 'bg-emerald-700 border-emerald-700 text-white' : 'border-zinc-300 dark:border-zinc-600'}`}>
-              {info.done ? '✓ Done' : 'Mark Done'}
+              className={`w-full sm:w-[118px] px-2 sm:px-4 py-2 whitespace-nowrap rounded-2xl text-[13px] sm:text-sm font-medium border ${info.done ? 'bg-emerald-700 border-emerald-700 text-white' : 'border-zinc-300 dark:border-zinc-600'}`}>
+              {info.done ? '✓ Done' : 'Mark done'}
             </button>
           </div>
         </div>
