@@ -1,58 +1,60 @@
 # Pikki's Info
 
-**A fresh fan-made decompose guide for *Love Nikki: Dress Up Queen***.
+A fan-made decompose guide for *Love Nikki: Dress Up Queen*. It replaces the now-offline Nikki's Info guide (`ln.nikkis.info/decompose/`) with the same kind of workflow, a new “P” look, and current item data.
 
-Replaces the now-offline `ln.nikkis.info/decompose/` with up-to-date data from Nikki Calc, a clean “P” brand, mobile-first design, local wardrobe tracking, and the exact same workflow you loved.
+**Live site:** https://pikkis-info.vercel.app/
 
-### Live Site
-→ https://pikkis-info.vercel.app (deployed from this repo)
+This is an unofficial, non-commercial fan project. It is not affiliated with, endorsed by, or sponsored by Elex, Paper Games, or Nikki's Info. Item data comes from [Nikki Calc](https://nikkicalc.com).
 
-### Features
-- Real-time data loaded from `data/pikkis-info.min.json` (updated weekly via GitHub Actions)
-- Search, category tabs, status filters (Extra clothes, Still needed, Cannot decompose, etc.)
-- Owned / Done tracking (saved in browser)
-- Full item pages with “Used to craft” (Need × N), Required counts (rd + recolours), comments, edited markers
-- CSV import/export compatible with Paige’s sheet
-- Shareable filter URLs
+## What it does today
 
-### Data Automation
-`.github/workflows/update-data.yml` runs every Monday at 12:00 UTC (and on manual dispatch).
+- Full decompose guide for **34,331 items** from Nikki Calc **v0.19b** (game data dated 30 Oct 2026).
+- Fuzzy, typo-tolerant search with field filters (category, hearts, owned, wanted, status, and more).
+- Mark items **Owned**, **Wanted** (wishlist), or **Done**. The guide also derives the familiar Extra clothes / Still needed / Cannot decompose / Not owned statuses.
+- CSV import and export of wardrobe marks (Item name, or Category + No., plus Owned / Wanted / Done).
+- **My Wardrobe** (`/my-wardrobe`): progress by category and a filtered list of everything you've marked.
+- Accounts and cloud wardrobes via Supabase. Signed-out users keep marks in the browser (`localStorage`); after sign-in they can merge into the account, and the wardrobe then syncs across devices. Auth is **password-only** — the site never sends email (no magic links, confirmation, or reset mail). Forgotten passwords go through the Contact page.
+- Public profiles at `/u/:username` (optional; private until you turn them on), including wardrobe stats and collections you mark public.
+- Contact (`/contact`) and About (`/about`) pages.
 
-The script `scripts/update_data.py` will eventually scrape Nikki Calc + the Overrides Google Sheet, merge, compute fields, and commit only when data changes.
+## Data
 
-Current data: **Nikki Calc v0.19b** (34,331 items).
+The production site loads the item bundle from the separate data repo, **[wdoucette/pikkis-info-data](https://github.com/wdoucette/pikkis-info-data)**, not from the placeholder file in this repo's `data/` folder.
 
-### Development
+That repo's GitHub Action runs every Monday at 12:00 UTC (and on demand): it scrapes Nikki Calc, applies corrections from Paige's Overrides Google Sheet, and commits only when the bundle changes.
+
+## Stack and local development
+
+React, TypeScript, Vite, and Tailwind CSS v4, hosted on Vercel. Auth, profiles, wardrobes, collections, and contact messages live in Supabase (schema in `supabase/migrations/`).
+
 ```bash
 npm install
 npm run dev
 ```
 
-Built with React, TypeScript, Tailwind v4, React Router, Fuse.js, Vite.
+Optional env vars (set in `.env.local` or on Vercel; never commit secret or `service_role` keys):
 
-Fan project • Not affiliated with Elex, Paper Games, or Nikki's Info.
-
-Data credit in footer.
-
-## Accounts & cloud wardrobes (Supabase)
-
-- Supabase project `pikkis-info` (ref `fosgctjofhkshfseaxgp`, free tier). Schema lives in `supabase/migrations/`.
-- Tables: `profiles`, `wardrobe_items`, `collections`, `collection_items`, all with Row Level Security:
-  users read/write only their own rows; public profiles (and their public collections / wardrobe stats) are readable by anyone.
-- The browser uses the **publishable** key (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` on Vercel, fallback in `src/lib/supabase.ts`).
-  Never commit a `service_role` / secret key.
-- Signed-out users keep their wardrobe in `localStorage`; after signing in they are offered a one-click merge.
-- Routes: `/account` (profile, preferences, collections, password), `/u/:username` (public profile).
-
-## Contact form
-
-- `/contact` stores messages in Supabase `public.contact_messages` (insert-only for the public; read them in the Supabase dashboard
-  Table Editor or SQL). A trigger fills server-side fields, hashes the sender IP with a private salt, and rate-limits
-  (5 per hour per IP, 30 per minute overall). Client side: honeypot field + 30 s / 5 per hour throttle.
-- Optional email notification: set `VITE_WEB3FORMS_KEY` on Vercel (a free Web3Forms access key; public by design) and redeploy.
-  No recipient address is stored in this repo.
+- `VITE_SUPABASE_URL` — Supabase project URL
+- `VITE_SUPABASE_ANON_KEY` — Supabase publishable / anon key
+- `VITE_WEB3FORMS_KEY` — optional, for Contact form email notifications
 
 ## Licensing
 
-Code: MIT (`LICENSE`). Original site text and the "P" artwork: CC BY-NC 4.0 (`LICENSE-CONTENT.md`).
-Love Nikki names, items, art and game data belong to Elex / Papergames; this is an unofficial, non-commercial fan project.
+- Code: MIT (`LICENSE`)
+- Original site text and the “P” artwork: CC BY-NC 4.0 (`LICENSE-CONTENT.md`)
+- Love Nikki names, items, art, and game data belong to Elex / Papergames and are not covered by those licenses.
+
+## Roadmap
+
+Nothing in this section is built yet.
+
+- **Direct support:** Patreon and/or Ko-fi.
+- **Freemium cloud features:** keep localStorage wardrobe tracking free; charge for cross-device sync and public collections. Today both of those are free for anyone who signs in.
+- **Google Play in-app purchases** via a Trusted Web Activity, if an Android wrapper is built.
+- **YouTube Super Thanks**, if video content is added.
+- **Cross-promo or revenue share with Nikki Calc** — an idea to approach them, not an agreement.
+- **Custom domain:** `pikkisinfo.com` is the intended name; it has not been purchased yet.
+
+### Housekeeping
+
+The live weekly data job lives in [`pikkis-info-data`](https://github.com/wdoucette/pikkis-info-data). This app repo still has a leftover workflow (`.github/workflows/update-data.yml`), script (`scripts/update_data.py`), and a one-item placeholder at `data/pikkis-info.min.json` that the production site does not use. The Overrides sheet is still private, so Monday's update falls back to the last saved overrides snapshot until the sheet is shared with the job.
