@@ -70,7 +70,7 @@ const isEdited = (item: Item, field: string) => !!item.edited?.includes(field);
 
 export interface GuideDefaults { sort?: string; dir?: 'asc' | 'desc'; size?: number }
 
-export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loading, defaults = {}, signedIn = false, sync = 'local', collections = [], onSaveView, onOpenAuth }: {
+export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loading, defaults = {}, signedIn = false, sync = 'local', collections = [], onSaveView, mine = false }: {
   items: Item[];
   meta: Meta | null;
   wardrobe: WardrobeData;
@@ -82,6 +82,8 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   collections?: Collection[];
   onSaveView?: (name: string, filterState: Record<string, string>) => Promise<unknown>;
   onOpenAuth?: () => void;
+  /** "My Wardrobe" mode: only items with an Owned/Wanted/Done mark; no warning banner; exports only these. */
+  mine?: boolean;
 }) {
   const navigate = useNavigate();
   const DEFAULT_SIZE = defaults.size && PAGE_SIZES.includes(defaults.size) ? defaults.size : BASE_SIZE;
@@ -145,8 +147,8 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
 
   // Remember guide filters so item pages can link back to them.
   useEffect(() => {
-    try { sessionStorage.setItem('pikkis-guide-search', params.toString()); } catch { /* ignore */ }
-  }, [params]);
+    try { sessionStorage.setItem('pikkis-guide-search', (mine ? 'mine:' : '') + params.toString()); } catch { /* ignore */ }
+  }, [params, mine]);
 
   // "/" focuses search, Esc clears it.
   useEffect(() => {
@@ -163,7 +165,9 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const visibleItems = useMemo(() => items.filter(i => !i.hidden), [items]);
+  const visibleItems = useMemo(() => (mine
+    ? items.filter(i => { const e = wardrobe[i.id]; return !!e && (e.owned > 0 || !!e.done || !!e.wanted); })
+    : items.filter(i => !i.hidden)), [items, mine, wardrobe]);
   const byId = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
 
   const categories = useMemo(() => {
@@ -318,12 +322,11 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   };
   const [saving, setSaving] = useState(false);
   const saveView = async () => {
-    if (!signedIn) { onOpenAuth?.(); return; }
     const suggested = [urlQ && `“${urlQ}”`, cat !== 'All' && cat, statusFilter !== 'All' && statusFilter].filter(Boolean).join(' · ') || 'My view';
     const name = window.prompt('Name this collection', suggested);
     if (!name?.trim() || !onSaveView) return;
     setSaving(true);
-    try { await onSaveView(name, filterStateFrom(params)); setNotice(`Saved collection “${name.trim()}”. Manage it on your account page.`); }
+    try { await onSaveView(name, filterStateFrom(params)); setNotice(signedIn ? `Saved view “${name.trim()}”. Find it in Collections or on My Wardrobe.` : `Saved view “${name.trim()}” in this browser. Sign in to keep it in your account.`); }
     catch (e) { setNotice(`Could not save: ${e instanceof Error ? e.message : String(e)}`); }
     finally { setSaving(false); }
   };
@@ -332,12 +335,13 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   };
 
   const exportCSV = () => {
-    const rows: (string | number)[][] = [['Item', 'Category', 'No.', 'Owned', 'Done', 'Status', 'Waiting on', 'Required', 'Incl. recolours']];
-    for (const item of items) {
+    const rows: (string | number)[][] = [['Item', 'Category', 'No.', 'Owned', 'Wanted', 'Done', 'Status', 'Waiting on', 'Required', 'Incl. recolours']];
+    for (const item of mine ? visibleItems : items) {
       const inf = deriveInfo(item, wardrobe);
-      rows.push([item.name, item.cat, item.n, inf.owned, inf.done ? 'Yes' : 'No', inf.status, inf.waiting, item.rd, item.rdc ?? item.rd]);
+      const wanted = !(inf.owned > 0) && !!wardrobe[item.id]?.wanted;
+      rows.push([item.name, item.cat, item.n, inf.owned, wanted ? 'Yes' : 'No', inf.done ? 'Yes' : 'No', inf.status, inf.waiting, item.rd, item.rdc ?? item.rd]);
     }
-    downloadText('pikkis-wardrobe.csv', toCSV(rows));
+    downloadText(mine ? 'my-pikki-wardrobe.csv' : 'pikkis-wardrobe.csv', toCSV(rows));
   };
 
   const importCSV = async (file: File) => {
@@ -346,7 +350,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
     const header = rows[0].map(h => h.trim().toLowerCase());
     const col = (...names: string[]) => header.findIndex(h => names.includes(h));
     const iItem = col('item', 'name'), iCat = col('category', 'cat'), iNo = col('no.', 'no', 'n', 'number');
-    const iOwned = col('owned', 'own'), iDone = col('done');
+    const iOwned = col('owned', 'own'), iDone = col('done'), iWanted = col('wanted', 'want', 'wishlist');
     if (iItem < 0 && (iCat < 0 || iNo < 0)) { setNotice('Import: need an Item column, or Category + No. columns.'); return; }
     const byCatNo = new Map<string, Item>();
     const byName = new Map<string, Item[]>();
@@ -371,7 +375,8 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
       const ov = iOwned >= 0 ? (r[iOwned] || '').trim() : '';
       const owned = /^\d+$/.test(ov) ? parseInt(ov, 10) : /^(y|yes|true|x|✓|✔)$/i.test(ov) ? 1 : 0;
       const done = iDone >= 0 ? /^(y|yes|true|1|x|✓|✔)$/i.test((r[iDone] || '').trim()) : !!next[it.id]?.done;
-      next[it.id] = { owned, done, ...(owned === 0 && next[it.id]?.wanted ? { wanted: true } : {}) };
+      const wantedIn = iWanted >= 0 ? /^(y|yes|true|1|x|✓|✔)$/i.test((r[iWanted] || '').trim()) : !!next[it.id]?.wanted;
+      next[it.id] = { owned, done, ...(owned === 0 && wantedIn ? { wanted: true } : {}) };
       matched++;
     }
     setWardrobe(next);
@@ -488,7 +493,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4">
       {/* Warning Banner */}
-      <div className="mb-6 bg-amber-50 dark:bg-zinc-900 border border-amber-200 dark:border-amber-800 rounded-3xl p-5 text-sm">
+      {!mine && <div className="mb-6 bg-amber-50 dark:bg-zinc-900 border border-amber-200 dark:border-amber-800 rounded-3xl p-5 text-sm">
         <div className="flex gap-3">
           <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" aria-hidden />
           <div>
@@ -499,7 +504,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
             </p>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Toolbar */}
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-3xl p-4 shadow-sm mb-4 space-y-3">
@@ -574,16 +579,16 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
           </div>
           <button type="button" onClick={saveView} disabled={saving}
             className="h-9 px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:border-amber-400 text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-60"
-            title={signedIn ? 'Save the current search and filters as a collection' : 'Sign in to save collections'}>
+            title={signedIn ? 'Save the current search and filters as a collection' : 'Save the current search and filters in this browser'}>
             <BookmarkPlus className="w-4 h-4" aria-hidden /> Save view
           </button>
           <label className="relative">
             <span className="sr-only">Open a collection</span>
             <FolderOpen className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" aria-hidden />
-            <select value="" disabled={!signedIn || collections.length === 0}
+            <select value="" disabled={collections.length === 0}
               onChange={e => { const c = collections.find(x => x.id === e.target.value); if (c) navigate(collectionHref(c)); }}
               className="h-9 w-[150px] pl-8 pr-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold disabled:opacity-50">
-              <option value="">{signedIn ? (collections.length ? 'Collections' : 'No collections') : 'Collections'}</option>
+              <option value="">{collections.length ? 'Saved views' : 'No saved views'}</option>
               {collections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
@@ -648,6 +653,12 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
             <div className="h-[30px]" />
             {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[92px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl animate-pulse" />)}
           </div>
+        </div>
+      ) : mine && visibleItems.length === 0 ? (
+        <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-700 p-10 sm:p-12 text-center">
+          <div className="font-display text-2xl mb-1">Your wardrobe is empty</div>
+          <div className="text-sm text-zinc-500 mb-5">Mark items as Owned, Wanted (★) or Done in the guide and they'll show up here.</div>
+          <Link to="/" className="inline-flex items-center h-11 px-6 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-semibold">Browse the Decompose Guide</Link>
         </div>
       ) : total === 0 ? (
         <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-700 p-12 text-center">

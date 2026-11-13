@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useParams } from 'react-router-dom';
-import { Edit2, ArrowLeft, Star } from 'lucide-react';
+import { BrowserRouter as Router, Routes, Route, Link, NavLink, useParams } from 'react-router-dom';
+import { Edit2, ArrowLeft, Star, Shirt } from 'lucide-react';
 
 const DATA_URL = 'https://raw.githubusercontent.com/wdoucette/pikkis-info-data/main/data/pikkis-info.min.json';
 const FALLBACK_URL = 'https://cdn.jsdelivr.net/gh/wdoucette/pikkis-info-data@main/data/pikkis-info.min.json';
@@ -12,18 +12,19 @@ import AuthDialog from './auth/AuthDialog';
 import UserMenu from './auth/UserMenu';
 import AccountPage from './pages/AccountPage';
 import ProfilePage from './pages/ProfilePage';
+import MyWardrobePage from './pages/MyWardrobePage';
 import { useWardrobe } from './wardrobe/useWardrobe';
 import { useCollections } from './wardrobe/useCollections';
 import { deriveInfo } from './guide/status';
 
 const PikkiMonogram = () => (
   <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-    <div className="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-2xl bg-gradient-to-br from-amber-300 via-amber-400 to-violet-400 flex items-center justify-center text-white font-display font-semibold text-2xl sm:text-[28px] shadow-[0_4px_12px_-2px_rgb(var(--glow)/0.45)] ring-2 ring-white/70 dark:ring-zinc-900/60" aria-hidden>
+    <div className="w-9 h-9 sm:w-11 sm:h-11 shrink-0 rounded-2xl bg-gradient-to-br from-amber-300 via-amber-400 to-violet-400 flex items-center justify-center text-white font-display font-semibold text-2xl sm:text-[28px] shadow-[0_4px_12px_-2px_rgb(var(--glow)/0.45)] ring-2 ring-white/70 dark:ring-zinc-900/60" aria-hidden>
       <span className="drop-shadow-[0_1px_1px_rgb(0_0_0/0.25)]">P</span>
     </div>
     <div className="min-w-0">
-      <div className="font-display font-semibold text-[22px] sm:text-[28px] leading-none tracking-tight text-zinc-900 dark:text-zinc-50 whitespace-nowrap">Pikki's Info</div>
-      <div className="text-[10px] sm:text-[11px] leading-none mt-1 text-amber-700 dark:text-amber-300 font-semibold tracking-[0.18em] whitespace-nowrap">DECOMPOSE GUIDE</div>
+      <div className="font-display font-semibold text-[19px] sm:text-[28px] leading-none tracking-tight text-zinc-900 dark:text-zinc-50 whitespace-nowrap">Pikki's Info</div>
+      <div className="text-[9px] sm:text-[11px] leading-none mt-1 text-amber-700 dark:text-amber-300 font-semibold tracking-[0.06em] sm:tracking-[0.18em] whitespace-nowrap">DECOMPOSE GUIDE</div>
     </div>
   </div>
 );
@@ -46,7 +47,11 @@ function ItemPage({ items, wardrobe, setWardrobe, loading }: { items: Item[]; wa
     return undefined;
   }, [items, id, cat, n]);
   const backTo = (() => {
-    try { const s = sessionStorage.getItem('pikkis-guide-search'); return s ? `/?${s}` : '/'; } catch { return '/'; }
+    try {
+      const s = sessionStorage.getItem('pikkis-guide-search') || '';
+      if (s.startsWith('mine:')) return `/my-wardrobe${s.length > 5 ? `?${s.slice(5)}` : ''}`;
+      return s ? `/?${s}` : '/';
+    } catch { return '/'; }
   })();
 
   if (loading) return <LoadingSpinner />;
@@ -81,7 +86,7 @@ function ItemPage({ items, wardrobe, setWardrobe, loading }: { items: Item[]; wa
   return (
     <div className="max-w-4xl mx-auto p-4 sm:p-6">
       <Link to={backTo} className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-700 mb-6">
-        <ArrowLeft className="w-4 h-4" /> Back to Guide
+        <ArrowLeft className="w-4 h-4" /> {backTo.startsWith('/my-wardrobe') ? 'Back to My Wardrobe' : 'Back to Guide'}
       </Link>
 
       <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow p-5 sm:p-8">
@@ -242,7 +247,7 @@ function AppShell() {
   const [loading, setLoading] = useState(true);
   const { ready, user, profile, openAuth } = useAuth();
   const { wardrobe, setWardrobe, sync, offerMerge, localCount, mergeLocal, dismissMerge } = useWardrobe(user, ready);
-  const { collections, save: saveCollection, update: updateCollection, remove: removeCollection } = useCollections(user?.id ?? null);
+  const { collections, save: saveCollection, update: updateCollection, remove: removeCollection } = useCollections(user?.id ?? null, ready);
 
   const loadData = async (retryCount = 0) => {
     setLoading(true);
@@ -296,6 +301,8 @@ function AppShell() {
     setWardrobe(newWardrobe);
   }, [setWardrobe]);
 
+  const myCount = useMemo(() => Object.values(wardrobe).filter(e => e.owned > 0 || e.wanted).length, [wardrobe]);
+  const badge = myCount > 9999 ? '9k+' : myCount.toLocaleString();
   const s = profile?.settings;
   const defaults = useMemo(() => ({ sort: s?.sort, dir: s?.dir, size: s?.size }), [s?.sort, s?.dir, s?.size]);
 
@@ -308,8 +315,16 @@ function AppShell() {
               <PikkiMonogram />
             </Link>
             
-            <nav className="flex items-center gap-3 sm:gap-6 text-sm shrink-0" aria-label="Main">
-              <Link to="/" className="hover:text-amber-700 dark:hover:text-amber-300 font-semibold hidden md:inline">Decompose Guide</Link>
+            <nav className="flex items-center gap-2 sm:gap-5 text-sm shrink-0" aria-label="Main">
+              <NavLink to="/" end className={({ isActive }) => `font-semibold hidden md:inline hover:text-amber-700 dark:hover:text-amber-300 ${isActive ? 'text-amber-700 dark:text-amber-300' : ''}`}>Decompose Guide</NavLink>
+              <NavLink to="/my-wardrobe" aria-label={`My Wardrobe, ${myCount} items`}
+                className={({ isActive }) => `inline-flex items-center gap-2 h-10 rounded-full border font-semibold px-2.5 md:px-3.5 ${isActive
+                  ? 'bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-200'
+                  : 'border-zinc-200 dark:border-zinc-700 bg-white/70 dark:bg-zinc-900/70 hover:border-amber-300'}`}>
+                <Shirt className="w-4 h-4 shrink-0" aria-hidden />
+                <span className="hidden md:inline whitespace-nowrap">My Wardrobe</span>
+                <span className="min-w-[2.25rem] h-6 px-1.5 rounded-full bg-amber-600 text-white text-xs font-bold tabular-nums grid place-items-center" aria-hidden>{badge}</span>
+              </NavLink>
               <a href="https://github.com/wdoucette/pikkis-info" target="_blank" rel="noreferrer" className="hover:text-amber-700 dark:hover:text-amber-300 hidden sm:inline">GitHub</a>
               <UserMenu />
             </nav>
@@ -348,6 +363,10 @@ function AppShell() {
             } />
             <Route path="/item/:id" element={
               <ItemPage items={items} wardrobe={wardrobe} setWardrobe={updateWardrobe} loading={loading} />
+            } />
+            <Route path="/my-wardrobe" element={
+              <MyWardrobePage items={items} meta={meta} wardrobe={wardrobe} setWardrobe={updateWardrobe} loading={loading}
+                defaults={defaults} sync={sync} collections={collections} onSaveView={saveCollection} onDeleteView={removeCollection} />
             } />
             <Route path="/account" element={
               <AccountPage wardrobe={wardrobe} itemCount={items.length} collections={collections}

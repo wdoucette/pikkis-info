@@ -19,7 +19,7 @@ export default function UserMenu() {
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
   }, [open]);
 
-  const box = 'w-[92px] sm:w-[132px] h-10 shrink-0';
+  const box = 'w-[80px] sm:w-[132px] h-10 shrink-0';
   if (!ready) return <div className={`${box} rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse`} aria-hidden />;
   if (!user) {
     return (
