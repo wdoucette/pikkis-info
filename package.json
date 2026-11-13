@@ -21,6 +21,7 @@
     "vite": "^8.3.6"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
     "@types/node": "^26.6.6",
     "date-fns": "^4.4.0",
     "fuse.js": "^7.5.0",

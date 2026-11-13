@@ -33,3 +33,13 @@ Built with React, TypeScript, Tailwind v4, React Router, Fuse.js, Vite.
 Fan project • Not affiliated with Elex, Paper Games, or Nikki's Info.
 
 Data credit in footer.
+
+## Accounts & cloud wardrobes (Supabase)
+
+- Supabase project `pikkis-info` (ref `fosgctjofhkshfseaxgp`, free tier). Schema lives in `supabase/migrations/`.
+- Tables: `profiles`, `wardrobe_items`, `collections`, `collection_items`, all with Row Level Security:
+  users read/write only their own rows; public profiles (and their public collections / wardrobe stats) are readable by anyone.
+- The browser uses the **publishable** key (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` on Vercel, fallback in `src/lib/supabase.ts`).
+  Never commit a `service_role` / secret key.
+- Signed-out users keep their wardrobe in `localStorage`; after signing in they are offered a one-click merge.
+- Routes: `/account` (profile, preferences, collections, password), `/u/:username` (public profile).

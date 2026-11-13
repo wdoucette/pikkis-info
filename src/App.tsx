@@ -1,35 +1,39 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useParams } from 'react-router-dom';
-import { Edit2, ArrowLeft } from 'lucide-react';
+import { Edit2, ArrowLeft, Star } from 'lucide-react';
 
 const DATA_URL = 'https://raw.githubusercontent.com/wdoucette/pikkis-info-data/main/data/pikkis-info.min.json';
 const FALLBACK_URL = 'https://cdn.jsdelivr.net/gh/wdoucette/pikkis-info-data@main/data/pikkis-info.min.json';
 
 import type { Item, Meta, WardrobeData } from './types';
 import DecomposeGuide, { StatusBadge, Hearts, itemPath } from './DecomposeGuide';
+import { AuthProvider, useAuth } from './auth/AuthProvider';
+import AuthDialog from './auth/AuthDialog';
+import UserMenu from './auth/UserMenu';
+import AccountPage from './pages/AccountPage';
+import ProfilePage from './pages/ProfilePage';
+import { useWardrobe } from './wardrobe/useWardrobe';
+import { useCollections } from './wardrobe/useCollections';
 import { deriveInfo } from './guide/status';
 
 const PikkiMonogram = () => (
-  <div className="flex items-center gap-3">
-    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-600 flex items-center justify-center text-white font-bold text-3xl shadow-inner border-2 border-amber-300">
-      P
+  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+    <div className="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-2xl bg-gradient-to-br from-amber-300 via-amber-400 to-violet-400 flex items-center justify-center text-white font-display font-semibold text-2xl sm:text-[28px] shadow-[0_4px_12px_-2px_rgb(var(--glow)/0.45)] ring-2 ring-white/70 dark:ring-zinc-900/60" aria-hidden>
+      <span className="drop-shadow-[0_1px_1px_rgb(0_0_0/0.25)]">P</span>
     </div>
-    <div>
-      <div className="text-2xl sm:text-3xl font-bold tracking-tighter text-amber-950 dark:text-amber-100 whitespace-nowrap">Pikki's Info</div>
-      <div className="text-[10px] text-amber-600 -mt-1 font-mono">DECOMPOSE GUIDE</div>
+    <div className="min-w-0">
+      <div className="font-display font-semibold text-[22px] sm:text-[28px] leading-none tracking-tight text-zinc-900 dark:text-zinc-50 whitespace-nowrap">Pikki's Info</div>
+      <div className="text-[10px] sm:text-[11px] leading-none mt-1 text-amber-700 dark:text-amber-300 font-semibold tracking-[0.18em] whitespace-nowrap">DECOMPOSE GUIDE</div>
     </div>
   </div>
 );
 
 const LoadingSpinner = () => (
-  <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-    <div className="w-12 h-12 border-4 border-amber-200 border-t-amber-600 rounded-full animate-spin"></div>
-    <div className="text-amber-600 font-medium">Loading Pikki's wardrobe data...</div>
-    <div className="text-xs text-zinc-500 max-w-[240px] text-center">34,000+ items • This may take a moment on first visit</div>
+  <div className="max-w-4xl mx-auto p-4 sm:p-6" role="status" aria-label="Loading item">
+    <div className="h-5 w-32 mb-6 rounded-full bg-zinc-200/70 dark:bg-zinc-800 animate-pulse" />
+    <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-sm border border-zinc-200 dark:border-zinc-700 p-5 sm:p-8 h-[560px] animate-pulse" />
   </div>
 );
-
-
 
 function ItemPage({ items, wardrobe, setWardrobe, loading }: { items: Item[]; wardrobe: WardrobeData; setWardrobe: (w: WardrobeData) => void; loading: boolean }) {
   const { cat, n, id } = useParams<{ cat?: string; n?: string; id?: string }>();
@@ -59,8 +63,12 @@ function ItemPage({ items, wardrobe, setWardrobe, loading }: { items: Item[]; wa
 
   const info = deriveInfo(item, wardrobe);
   const byId = (pid: number) => items.find(i => i.id === pid);
-  const setEntry = (patch: Partial<{ owned: number; done: boolean }>) =>
-    setWardrobe({ ...wardrobe, [item.id]: { ...(wardrobe[item.id] ?? { owned: 0, done: false }), ...patch } });
+  const wanted = !(info.owned > 0) && !!wardrobe[item.id]?.wanted;
+  const setEntry = (patch: Partial<{ owned: number; done: boolean; wanted: boolean }>) => {
+    const next = { ...(wardrobe[item.id] ?? { owned: 0, done: false }), ...patch };
+    if (next.owned > 0) delete next.wanted;
+    setWardrobe({ ...wardrobe, [item.id]: next });
+  };
   const evTo: { id: number; num?: number }[] = Array.isArray(item.ev?.to) ? item.ev.to : [];
   const evFrom: { id: number; num?: number }[] = Array.isArray(item.ev?.from) ? item.ev.from : [];
   const usedIds = new Set((item.u || []).map(u => u.id));
@@ -92,13 +100,18 @@ function ItemPage({ items, wardrobe, setWardrobe, loading }: { items: Item[]; wa
             )}
             {item.hidden && <div className="mt-2 text-xs text-zinc-500">This item is hidden from the guide list.</div>}
           </div>
-          <div className="flex gap-3">
+          <div className="grid grid-cols-3 sm:flex gap-2 sm:gap-3 w-full sm:w-auto">
             <button type="button" onClick={() => setEntry({ owned: info.owned > 0 ? 0 : 1 })} aria-pressed={info.owned > 0}
-              className={`px-5 py-2 border rounded-2xl text-sm flex items-center gap-2 ${info.owned > 0 ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
+              className={`w-full sm:w-[118px] px-2 sm:px-4 py-2 border rounded-2xl text-sm inline-flex items-center justify-center gap-2 tabular-nums ${info.owned > 0 ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
               Owned: <span className="font-mono font-bold">{info.owned}</span>
             </button>
+            <button type="button" onClick={() => setEntry({ wanted: !wanted })} aria-pressed={wanted} disabled={info.owned > 0}
+              title={info.owned > 0 ? 'Already owned' : 'Add to wishlist'}
+              className={`w-full sm:w-[118px] px-2 sm:px-4 py-2 border rounded-2xl text-sm font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-40 ${wanted ? 'bg-violet-100 border-violet-300 text-violet-800 dark:bg-violet-950 dark:text-violet-200 dark:border-violet-700' : 'enabled:hover:bg-zinc-50 dark:enabled:hover:bg-zinc-800'}`}>
+              <Star className={`w-4 h-4 ${wanted ? 'fill-current' : ''}`} aria-hidden /> {wanted ? 'Wanted' : 'Want'}
+            </button>
             <button type="button" onClick={() => setEntry({ done: !info.done })} aria-pressed={info.done}
-              className={`px-6 py-2 rounded-2xl text-sm font-medium ${info.done ? 'bg-emerald-600 text-white' : 'border'}`}>
+              className={`w-full sm:w-[118px] px-2 sm:px-4 py-2 rounded-2xl text-sm font-medium border ${info.done ? 'bg-emerald-700 border-emerald-700 text-white' : 'border-zinc-300 dark:border-zinc-600'}`}>
               {info.done ? '✓ Done' : 'Mark Done'}
             </button>
           </div>
@@ -214,18 +227,22 @@ function ItemPage({ items, wardrobe, setWardrobe, loading }: { items: Item[]; wa
 }
 
 function App() {
+  return (
+    <Router>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </Router>
+  );
+}
+
+function AppShell() {
   const [items, setItems] = useState<Item[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [loading, setLoading] = useState(true);
-  const [wardrobe, setWardrobe] = useState<WardrobeData>(() => {
-    const saved = localStorage.getItem('pikkis-wardrobe');
-    return saved ? JSON.parse(saved) : {};
-  });
-
-  // Persist wardrobe
-  useEffect(() => {
-    localStorage.setItem('pikkis-wardrobe', JSON.stringify(wardrobe));
-  }, [wardrobe]);
+  const { ready, user, profile, openAuth } = useAuth();
+  const { wardrobe, setWardrobe, sync, offerMerge, localCount, mergeLocal, dismissMerge } = useWardrobe(user, ready);
+  const { collections, save: saveCollection, update: updateCollection, remove: removeCollection } = useCollections(user?.id ?? null);
 
   const loadData = async (retryCount = 0) => {
     setLoading(true);
@@ -277,31 +294,39 @@ function App() {
 
   const updateWardrobe = useCallback((newWardrobe: WardrobeData) => {
     setWardrobe(newWardrobe);
-  }, []);
+  }, [setWardrobe]);
+
+  const s = profile?.settings;
+  const defaults = useMemo(() => ({ sort: s?.sort, dir: s?.dir, size: s?.size }), [s?.sort, s?.dir, s?.size]);
 
   return (
-    <Router>
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+      <div className="min-h-screen flex flex-col text-zinc-900 dark:text-zinc-100">
         {/* Top Navigation */}
-        <header className="sticky top-0 z-50 bg-white/90 dark:bg-zinc-900/90 border-b border-zinc-100 dark:border-zinc-800 backdrop-blur-lg">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-5 flex items-center justify-between gap-3">
-            <Link to="/">
+        <header className="sticky top-0 z-50 bg-white/85 dark:bg-zinc-900/85 border-b border-zinc-200/70 dark:border-zinc-800 backdrop-blur-lg">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 h-[64px] sm:h-[72px] flex items-center justify-between gap-2 sm:gap-3">
+            <Link to="/" className="min-w-0 shrink" aria-label="Pikki's Info home">
               <PikkiMonogram />
             </Link>
             
-            <div className="flex items-center gap-4 sm:gap-8 text-xs sm:text-sm">
-              <Link to="/" className="hover:text-amber-600 font-medium hidden sm:inline">Decompose Guide</Link>
-              <a href="https://github.com/wdoucette/pikkis-info" target="_blank" className="hover:text-amber-600">GitHub</a>
-              <a href="#about" className="text-zinc-400 hover:text-zinc-600">About</a>
-            </div>
-            
-            <div className="hidden md:flex items-center gap-2 text-xs font-mono text-zinc-400">
-              FAN RECONSTRUCTION
-            </div>
+            <nav className="flex items-center gap-3 sm:gap-6 text-sm shrink-0" aria-label="Main">
+              <Link to="/" className="hover:text-amber-700 dark:hover:text-amber-300 font-semibold hidden md:inline">Decompose Guide</Link>
+              <a href="https://github.com/wdoucette/pikkis-info" target="_blank" rel="noreferrer" className="hover:text-amber-700 dark:hover:text-amber-300 hidden sm:inline">GitHub</a>
+              <UserMenu />
+            </nav>
           </div>
         </header>
 
-        <main>
+        {offerMerge && (
+          <div role="status" className="fixed z-[60] bottom-3 inset-x-3 sm:inset-x-auto sm:right-6 sm:bottom-6 sm:max-w-md bg-violet-50 dark:bg-violet-950 border border-violet-200 dark:border-violet-800 rounded-2xl shadow-lg">
+            <div className="px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <span className="mr-auto text-violet-900 dark:text-violet-100">You marked <b>{localCount.toLocaleString()}</b> item{localCount === 1 ? '' : 's'} in this browser before signing in. Add them to your account?</span>
+              <button type="button" onClick={mergeLocal} className="h-9 px-4 rounded-xl bg-violet-700 hover:bg-violet-800 text-white font-semibold">Merge into account</button>
+              <button type="button" onClick={dismissMerge} className="h-9 px-3 rounded-xl text-violet-900 dark:text-violet-100 hover:bg-violet-100 dark:hover:bg-violet-900">Not now</button>
+            </div>
+          </div>
+        )}
+
+        <main className="flex-1 min-h-[calc(100vh-64px)]">
           <Routes>
             <Route path="/" element={
               <DecomposeGuide 
@@ -310,6 +335,12 @@ function App() {
                 wardrobe={wardrobe} 
                 setWardrobe={updateWardrobe}
                 loading={loading} 
+                defaults={defaults}
+                signedIn={!!user}
+                sync={sync}
+                collections={collections}
+                onSaveView={saveCollection}
+                onOpenAuth={() => openAuth('signin')}
               />
             } />
             <Route path="/wardrobe/:cat/:n" element={
@@ -318,18 +349,29 @@ function App() {
             <Route path="/item/:id" element={
               <ItemPage items={items} wardrobe={wardrobe} setWardrobe={updateWardrobe} loading={loading} />
             } />
+            <Route path="/account" element={
+              <AccountPage wardrobe={wardrobe} itemCount={items.length} collections={collections}
+                onUpdateCollection={updateCollection} onDeleteCollection={removeCollection} />
+            } />
+            <Route path="/u/:username" element={<ProfilePage items={items} />} />
+            <Route path="*" element={
+              <div className="max-w-2xl mx-auto p-8 text-center">
+                <h1 className="font-display text-3xl mb-3">Page not found</h1>
+                <Link to="/" className="text-amber-700 dark:text-amber-300 hover:underline">Back to the Decompose Guide</Link>
+              </div>
+            } />
           </Routes>
         </main>
 
-        <footer className="bg-zinc-900 text-zinc-400 py-12 border-t border-zinc-800 mt-20">
+        <footer id="about" className="bg-zinc-900 text-zinc-300 py-12 border-t border-zinc-800 mt-20">
           <div className="max-w-7xl mx-auto px-6 text-center text-xs leading-relaxed">
-            <p>Fan-made decompose guide for <span className="text-amber-300">Love Nikki: Dress Up Queen</span>. Not affiliated with Elex, Paper Games, Nikki Calc, or the original Nikki's Info.</p>
-            <p className="mt-3">Item data from <span className="text-amber-400">Nikki Calc (nikkicalc.com)</span>. Editorial comments and corrections from the Pikki's Info Overrides sheet.</p>
-            <p className="mt-6 text-[10px] opacity-60">© Pikki's Info • Built with Grok Build • Data updates weekly via GitHub Actions</p>
+            <p>Fan-made decompose guide for <span className="text-amber-200">Love Nikki: Dress Up Queen</span>. Not affiliated with Elex, Paper Games, Nikki Calc, or the original Nikki's Info.</p>
+            <p className="mt-3">Item data from <span className="text-amber-200">Nikki Calc (nikkicalc.com)</span>. Editorial comments and corrections from the Pikki's Info Overrides sheet.</p>
+            <p className="mt-6 text-[11px] text-zinc-400">© Pikki's Info • Accounts by Supabase • Data updates weekly via GitHub Actions</p>
           </div>
         </footer>
+        <AuthDialog />
       </div>
-    </Router>
   );
 }
 

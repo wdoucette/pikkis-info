@@ -1,9 +1,13 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search, Heart, CheckCircle, AlertTriangle, Info, Download, Upload, X, ChevronUp, ChevronDown,
   ChevronsUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, HelpCircle, Trash2,
+  Star, BookmarkPlus, FolderOpen, Cloud, CloudOff, HardDrive,
 } from 'lucide-react';
+import type { Collection } from './lib/supabase';
+import type { SyncState } from './wardrobe/useWardrobe';
+import { filterStateFrom, collectionHref } from './wardrobe/useCollections';
 import { format } from 'date-fns';
 import type { Item, Meta, WardrobeData } from './types';
 import { deriveInfo, STATUSES, type DerivedInfo } from './guide/status';
@@ -13,8 +17,8 @@ import { parseCSV, toCSV, downloadText } from './guide/csv';
 export const itemPath = (item: Item) => `/wardrobe/${encodeURIComponent(item.cat.toLowerCase())}/${item.n}`;
 
 const PAGE_SIZES = [25, 50, 100, 250];
-const DEFAULT_SIZE = 50;
-const FILTER_STATUSES = ['All', ...STATUSES, 'Left to do'];
+const BASE_SIZE = 50;
+const FILTER_STATUSES = ['All', ...STATUSES, 'Left to do', 'Owned', 'Wanted'];
 
 type SortKey = 'relevance' | 'name' | 'cat' | 'n' | 'r' | 'status' | 'rd' | 'rdc' | 'rr' | 'used' | 'waiting' | 'owned' | 'done';
 const SORT_KEYS: SortKey[] = ['relevance', 'name', 'cat', 'n', 'r', 'status', 'rd', 'rdc', 'rr', 'used', 'waiting', 'owned', 'done'];
@@ -64,13 +68,24 @@ function useDebounced<T>(value: T, ms: number): T {
 
 const isEdited = (item: Item, field: string) => !!item.edited?.includes(field);
 
-export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loading }: {
+export interface GuideDefaults { sort?: string; dir?: 'asc' | 'desc'; size?: number }
+
+export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loading, defaults = {}, signedIn = false, sync = 'local', collections = [], onSaveView, onOpenAuth }: {
   items: Item[];
   meta: Meta | null;
   wardrobe: WardrobeData;
   setWardrobe: (w: WardrobeData) => void;
   loading: boolean;
+  defaults?: GuideDefaults;
+  signedIn?: boolean;
+  sync?: SyncState;
+  collections?: Collection[];
+  onSaveView?: (name: string, filterState: Record<string, string>) => Promise<unknown>;
+  onOpenAuth?: () => void;
 }) {
+  const navigate = useNavigate();
+  const DEFAULT_SIZE = defaults.size && PAGE_SIZES.includes(defaults.size) ? defaults.size : BASE_SIZE;
+  const defaultSort: SortKey = defaults.sort && SORT_KEYS.includes(defaults.sort as SortKey) && defaults.sort !== 'relevance' ? defaults.sort as SortKey : 'cat';
   const [params, setParams] = useSearchParams();
   const urlQ = params.get('q') || '';
   const cat = params.get('cat') || 'All';
@@ -78,8 +93,9 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   const hasQuery = urlQ.trim() !== '';
   const rawSort = params.get('sort') as SortKey | null;
   const sort: SortKey = rawSort && SORT_KEYS.includes(rawSort) && (rawSort !== 'relevance' || hasQuery)
-    ? rawSort : (hasQuery ? 'relevance' : 'cat');
-  const dir: 'asc' | 'desc' = params.get('dir') === 'desc' ? 'desc' : params.get('dir') === 'asc' ? 'asc' : (sort === 'relevance' ? 'desc' : 'asc');
+    ? rawSort : (hasQuery ? 'relevance' : defaultSort);
+  const dir: 'asc' | 'desc' = params.get('dir') === 'desc' ? 'desc' : params.get('dir') === 'asc' ? 'asc'
+    : (sort === 'relevance' ? 'desc' : !rawSort && !hasQuery && defaults.dir ? defaults.dir : 'asc');
   const sizeParam = parseInt(params.get('size') || '', 10);
   const size = PAGE_SIZES.includes(sizeParam) ? sizeParam : DEFAULT_SIZE;
   const pageParam = Math.max(1, parseInt(params.get('page') || '1', 10) || 1);
@@ -105,7 +121,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
       if (next.get('page') === '1') next.delete('page');
       return next;
     }, { replace: true });
-  }, [setParams]);
+  }, [setParams, DEFAULT_SIZE]);
 
   // Push debounced search text into the URL.
   useEffect(() => {
@@ -164,6 +180,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
     return m;
   }, [visibleItems, wardrobe]);
   const infoOf = useCallback((it: Item) => infoMap.get(it.id) || deriveInfo(it, wardrobe), [infoMap, wardrobe]);
+  const isWanted = (id: number, inf: DerivedInfo) => !(inf.owned > 0) && !!wardrobe[id]?.wanted;
 
   // Search index is built once per dataset, lazily on first search.
   const indexRef = useRef<{ items: Item[]; index: SearchIndex } | null>(null);
@@ -199,13 +216,15 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
       if (statusFilter !== 'All') {
         const inf = infoOf(it);
         if (statusFilter === 'Left to do') { if (inf.done) return false; }
+        else if (statusFilter === 'Owned') { if (!(inf.owned > 0)) return false; }
+        else if (statusFilter === 'Wanted') { if (!isWanted(it.id, inf)) return false; }
         else if (inf.status !== statusFilter) return false;
       }
       if (scores && !scores.has(it.id)) return false;
       if (sf && !sf(it)) return false;
       return true;
     });
-  }, [visibleItems, cat, statusFilter, scores, parsed, infoOf, catNames]);
+  }, [visibleItems, cat, statusFilter, scores, parsed, infoOf, catNames, wardrobe]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sorted = useMemo(() => {
     const val = (it: Item): number | string => {
@@ -265,19 +284,48 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   };
 
   const statusCounts = useMemo(() => {
-    const c: Record<string, number> = { All: 0, 'Left to do': 0 };
+    const c: Record<string, number> = { All: 0, 'Left to do': 0, Owned: 0, Wanted: 0 };
     for (const it of visibleItems) {
       if (cat !== 'All' && it.cat !== cat) continue;
       const inf = infoOf(it);
       c.All++;
       c[inf.status] = (c[inf.status] || 0) + 1;
       if (!inf.done) c['Left to do']++;
+      if (inf.owned > 0) c.Owned++;
+      else if (wardrobe[it.id]?.wanted) c.Wanted++;
     }
     return c;
-  }, [visibleItems, cat, infoOf]);
+  }, [visibleItems, cat, infoOf, wardrobe]);
+
+  // Whole-wardrobe progress (all categories).
+  const progress = useMemo(() => {
+    let owned = 0, wanted = 0, done = 0;
+    for (const e of Object.values(wardrobe)) {
+      if (e.owned > 0) owned++; else if (e.wanted) wanted++;
+      if (e.done) done++;
+    }
+    return { owned, wanted, done };
+  }, [wardrobe]);
 
   const toggleOwned = (itemId: number, currentOwned: number) => {
-    setWardrobe({ ...wardrobe, [itemId]: { ...(wardrobe[itemId] ?? { owned: 0, done: false }), owned: currentOwned > 0 ? 0 : 1 } });
+    const { wanted: _w, ...rest } = wardrobe[itemId] ?? { owned: 0, done: false };
+    void _w;
+    setWardrobe({ ...wardrobe, [itemId]: { ...rest, owned: currentOwned > 0 ? 0 : 1 } });
+  };
+  const toggleWanted = (itemId: number) => {
+    const cur = wardrobe[itemId] ?? { owned: 0, done: false };
+    setWardrobe({ ...wardrobe, [itemId]: { ...cur, wanted: !cur.wanted } });
+  };
+  const [saving, setSaving] = useState(false);
+  const saveView = async () => {
+    if (!signedIn) { onOpenAuth?.(); return; }
+    const suggested = [urlQ && `“${urlQ}”`, cat !== 'All' && cat, statusFilter !== 'All' && statusFilter].filter(Boolean).join(' · ') || 'My view';
+    const name = window.prompt('Name this collection', suggested);
+    if (!name?.trim() || !onSaveView) return;
+    setSaving(true);
+    try { await onSaveView(name, filterStateFrom(params)); setNotice(`Saved collection “${name.trim()}”. Manage it on your account page.`); }
+    catch (e) { setNotice(`Could not save: ${e instanceof Error ? e.message : String(e)}`); }
+    finally { setSaving(false); }
   };
   const toggleDone = (itemId: number, currentDone: boolean) => {
     setWardrobe({ ...wardrobe, [itemId]: { ...(wardrobe[itemId] ?? { owned: 0, done: false }), done: !currentDone } });
@@ -323,7 +371,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
       const ov = iOwned >= 0 ? (r[iOwned] || '').trim() : '';
       const owned = /^\d+$/.test(ov) ? parseInt(ov, 10) : /^(y|yes|true|x|✓|✔)$/i.test(ov) ? 1 : 0;
       const done = iDone >= 0 ? /^(y|yes|true|1|x|✓|✔)$/i.test((r[iDone] || '').trim()) : !!next[it.id]?.done;
-      next[it.id] = { owned, done };
+      next[it.id] = { owned, done, ...(owned === 0 && next[it.id]?.wanted ? { wanted: true } : {}) };
       matched++;
     }
     setWardrobe(next);
@@ -331,20 +379,12 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   };
 
   const clearWardrobe = () => {
-    if (window.confirm('Clear all Owned and Done marks stored in this browser? Export a CSV first if you want a backup.')) {
+    const where = signedIn ? 'saved to your account' : 'stored in this browser';
+    if (window.confirm(`Clear all Owned, Wanted and Done marks ${where}? Export a CSV first if you want a backup.`)) {
       setWardrobe({});
-      setNotice('Local wardrobe cleared.');
+      setNotice(signedIn ? 'Account wardrobe cleared.' : 'Local wardrobe cleared.');
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4" role="status">
-        <div className="w-12 h-12 border-4 border-amber-200 border-t-amber-600 rounded-full animate-spin" aria-hidden></div>
-        <div className="text-amber-600 font-medium">Loading Pikki's wardrobe data...</div>
-      </div>
-    );
-  }
 
   const SortHeader = ({ k, label, className = '', title }: { k: SortKey; label: string; className?: string; title?: string }) => {
     const active = sort === k;
@@ -363,7 +403,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   const Pager = ({ where }: { where: string }) => (
     <nav aria-label={`Pagination ${where}`} className="flex flex-wrap items-center justify-between gap-3 text-sm">
       <div className="text-zinc-500" data-testid={where === 'top' ? 'result-count' : undefined}>
-        {total === 0 ? 'No matching items' : <>Showing <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200">{(start + 1).toLocaleString()}–{Math.min(start + size, total).toLocaleString()}</span> of <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200">{total.toLocaleString()}</span> matching{total !== visibleItems.length && <> ({visibleItems.length.toLocaleString()} total)</>}</>}
+        {loading ? 'Loading 34,000+ items…' : total === 0 ? 'No matching items' : <>Showing <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200">{(start + 1).toLocaleString()}–{Math.min(start + size, total).toLocaleString()}</span> of <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200">{total.toLocaleString()}</span> matching{total !== visibleItems.length && <> ({visibleItems.length.toLocaleString()} total)</>}</>}
       </div>
       <div className="flex items-center gap-2">
         <label className="flex items-center gap-1.5 text-zinc-500">
@@ -401,7 +441,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   const OwnedBtn = ({ item, inf }: { item: Item; inf: DerivedInfo }) => (
     <button type="button" onClick={() => toggleOwned(item.id, inf.owned)} aria-pressed={inf.owned > 0}
       aria-label={`${item.name}: owned ${inf.owned}. Toggle owned`} title="Toggle owned"
-      className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono border transition-all ${inf.owned > 0
+      className={`w-9 h-7 shrink-0 rounded-lg flex items-center justify-center text-xs font-mono tabular-nums border transition-colors ${inf.owned > 0
         ? 'bg-emerald-100 border-emerald-300 text-emerald-700 dark:bg-emerald-900 dark:border-emerald-700 dark:text-emerald-200'
         : 'bg-zinc-100 border-zinc-300 hover:bg-zinc-200 dark:bg-zinc-800 dark:border-zinc-600'}`}>
       {inf.owned}
@@ -410,12 +450,24 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   const DoneBtn = ({ item, inf }: { item: Item; inf: DerivedInfo }) => (
     <button type="button" onClick={() => toggleDone(item.id, inf.done)} aria-pressed={inf.done}
       aria-label={`${item.name}: ${inf.done ? 'done' : 'not done'}. Toggle done`} title="Toggle done"
-      className={`w-6 h-6 flex items-center justify-center rounded-md border transition-all ${inf.done
+      className={`w-7 h-7 shrink-0 flex items-center justify-center rounded-lg border transition-colors ${inf.done
         ? 'bg-emerald-500 border-emerald-500 text-white'
         : 'border-zinc-300 dark:border-zinc-600 hover:border-emerald-400'}`}>
-      {inf.done && <CheckCircle className="w-4 h-4" />}
+      <CheckCircle className={`w-4 h-4 ${inf.done ? '' : 'invisible'}`} aria-hidden />
     </button>
   );
+  const WantedBtn = ({ item, inf }: { item: Item; inf: DerivedInfo }) => {
+    const on = isWanted(item.id, inf);
+    return (
+      <button type="button" onClick={() => toggleWanted(item.id)} aria-pressed={on} disabled={inf.owned > 0}
+        aria-label={`${item.name}: ${on ? 'on wishlist' : 'not wanted'}. Toggle wanted`} title={inf.owned > 0 ? 'Already owned' : 'Toggle wishlist'}
+        className={`w-7 h-7 shrink-0 rounded-lg flex items-center justify-center border transition-colors disabled:opacity-30 ${on
+          ? 'bg-violet-100 border-violet-300 text-violet-700 dark:bg-violet-900 dark:border-violet-600 dark:text-violet-200'
+          : 'border-zinc-300 dark:border-zinc-600 text-zinc-400 enabled:hover:border-violet-400 enabled:hover:text-violet-600'}`}>
+        <Star className={`w-4 h-4 ${on ? 'fill-current' : ''}`} aria-hidden />
+      </button>
+    );
+  };
   const Num = ({ item, field, value }: { item: Item; field: string; value: number | undefined }) => (
     <span className={isEdited(item, field) ? 'text-amber-600 font-semibold' : ''} title={isEdited(item, field) ? 'Edited by Pikki' : undefined}>
       {value ?? '—'}{isEdited(item, field) && <sup aria-label="edited">*</sup>}
@@ -477,8 +529,8 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
           <label className="flex items-center">
             <span className="sr-only">Status filter</span>
             <select value={statusFilter} onChange={e => update({ status: e.target.value })}
-              className="w-full lg:w-auto bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-400">
-              {FILTER_STATUSES.map(s => <option key={s} value={s}>{s}{statusCounts[s] !== undefined ? ` (${statusCounts[s].toLocaleString()})` : ' (0)'}</option>)}
+              className="w-full lg:w-60 h-[46px] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl px-4 text-sm focus:outline-none focus:border-amber-400">
+              {FILTER_STATUSES.map(s => <option key={s} value={s}>{s}{loading ? '' : statusCounts[s] !== undefined ? ` (${statusCounts[s].toLocaleString()})` : ' (0)'}</option>)}
             </select>
           </label>
           <div className="flex gap-2 flex-wrap">
@@ -509,6 +561,33 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
             </button>
           )}
         </div>
+        <div className="flex flex-wrap items-center gap-2 min-h-9 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+          <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-300 mr-auto tabular-nums" aria-label="Wardrobe progress">
+            <span title={sync === 'local' ? 'Saved in this browser only' : sync === 'error' ? 'Not saved yet, retrying' : 'Saved to your account'}
+              className="inline-flex items-center gap-1 min-w-[96px] whitespace-nowrap">
+              {sync === 'local' ? <HardDrive className="w-3.5 h-3.5" aria-hidden /> : sync === 'error' ? <CloudOff className="w-3.5 h-3.5 text-red-600" aria-hidden /> : <Cloud className="w-3.5 h-3.5 text-violet-600 dark:text-violet-300" aria-hidden />}
+              {sync === 'local' ? 'This browser' : sync === 'loading' ? 'Loading…' : sync === 'saving' ? 'Saving…' : sync === 'error' ? 'Retrying…' : 'Synced'}
+            </span>
+            <span><b className="text-emerald-700 dark:text-emerald-300">{progress.owned.toLocaleString()}</b> owned</span>
+            <span><b className="text-violet-700 dark:text-violet-300">{progress.wanted.toLocaleString()}</b> wanted</span>
+            <span className="hidden sm:inline"><b>{progress.done.toLocaleString()}</b> done</span>
+          </div>
+          <button type="button" onClick={saveView} disabled={saving}
+            className="h-9 px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:border-amber-400 text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-60"
+            title={signedIn ? 'Save the current search and filters as a collection' : 'Sign in to save collections'}>
+            <BookmarkPlus className="w-4 h-4" aria-hidden /> Save view
+          </button>
+          <label className="relative">
+            <span className="sr-only">Open a collection</span>
+            <FolderOpen className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" aria-hidden />
+            <select value="" disabled={!signedIn || collections.length === 0}
+              onChange={e => { const c = collections.find(x => x.id === e.target.value); if (c) navigate(collectionHref(c)); }}
+              className="h-9 w-[150px] pl-8 pr-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold disabled:opacity-50">
+              <option value="">{signedIn ? (collections.length ? 'Collections' : 'No collections') : 'Collections'}</option>
+              {collections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+        </div>
         {showHelp && (
           <div className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800 rounded-2xl p-4 grid sm:grid-cols-2 gap-x-6 gap-y-1">
             <div>Typos and partial words are OK: <code>sandal blak</code>, <code>frost</code></div>
@@ -523,13 +602,14 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
         )}
 
         {/* Category tabs */}
-        <div role="tablist" aria-label="Category" className="flex gap-1 overflow-x-auto md:overflow-visible md:flex-wrap pb-1 -mx-1 px-1 [scrollbar-width:thin]">
-          {[['All', visibleItems.length] as [string, number], ...categories].map(([c, count]) => (
+        <div role="tablist" aria-label="Category" className="flex gap-1.5 h-10 items-center overflow-x-auto overflow-y-hidden pb-1 -mx-1 px-1 [scrollbar-width:thin] cat-scroller">
+          {loading && Array.from({ length: 12 }).map((_, i) => <span key={i} className="shrink-0 h-[30px] w-24 rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" aria-hidden />)}
+          {!loading && [['All', visibleItems.length] as [string, number], ...categories].map(([c, count]) => (
             <button key={c} type="button" role="tab" aria-selected={cat === c} onClick={() => update({ cat: c })}
-              className={`shrink-0 px-3 py-1.5 text-xs rounded-full font-medium border transition-all whitespace-nowrap ${cat === c
-                ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
+              className={`shrink-0 h-[30px] px-3 text-xs rounded-full font-semibold border transition-colors whitespace-nowrap ${cat === c
+                ? 'bg-amber-600 border-amber-600 text-white shadow-sm'
                 : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 hover:border-amber-300 text-zinc-600 dark:text-zinc-300'}`}>
-              {c} <span className={cat === c ? 'opacity-80' : 'text-zinc-400'}>{count.toLocaleString()}</span>
+              {c} <span className={cat === c ? 'opacity-90' : 'text-zinc-500 dark:text-zinc-400'}>{count.toLocaleString()}</span>
             </button>
           ))}
         </div>
@@ -550,7 +630,26 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
         </div>
       )}
 
-      {total === 0 ? (
+      {loading ? (
+        <div aria-busy="true" aria-label="Loading items">
+          <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-700 overflow-clip shadow-sm">
+            <div className="h-[45px] bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-700" />
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} className="h-[53px] px-5 flex items-center gap-6 border-b border-zinc-100 dark:border-zinc-800">
+                <span className="h-3.5 w-48 rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+                <span className="h-3 w-20 rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+                <span className="h-3 w-10 rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+                <span className="h-3 flex-1 rounded-full bg-zinc-50 dark:bg-zinc-900" />
+                <span className="h-7 w-24 rounded-lg bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+              </div>
+            ))}
+          </div>
+          <div className="md:hidden space-y-2">
+            <div className="h-[30px]" />
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[92px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl animate-pulse" />)}
+          </div>
+        </div>
+      ) : total === 0 ? (
         <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-700 p-12 text-center">
           <div className="text-lg font-medium mb-1">No items match</div>
           <div className="text-sm text-zinc-500 mb-4">Try fewer words, a different category, or check the search tips.</div>
@@ -574,6 +673,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
                   <SortHeader k="rr" label="Tree" title="Required across the full crafting tree (recursive)" />
                   <SortHeader k="used" label="Used" title="Number of items it is used to craft / evolve into" />
                   <SortHeader k="owned" label="Owned" />
+                  <th scope="col" className="px-2 py-3 text-left text-xs font-semibold tracking-wide text-zinc-500" title="Wishlist">Want</th>
                   <SortHeader k="done" label="Done" className="pr-5" />
                 </tr>
               </thead>
@@ -592,6 +692,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
                       <td className="px-3 py-3 tabular-nums text-zinc-500"><Num item={item} field="rr" value={item.rr} /></td>
                       <td className="px-3 py-3 tabular-nums text-zinc-500" title={(item.u || []).slice(0, 12).map(u => `${u.name || u.id} ×${u.q}`).join('\n') || undefined}>{item.u?.length || 0}</td>
                       <td className="px-3 py-3"><OwnedBtn item={item} inf={inf} /></td>
+                      <td className="px-2 py-3"><WantedBtn item={item} inf={inf} /></td>
                       <td className="pl-3 pr-5 py-3"><DoneBtn item={item} inf={inf} /></td>
                     </tr>
                   );
@@ -618,7 +719,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
                 <div key={item.id} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-3">
                   <div className="flex justify-between gap-2">
                     <NameCell item={item} />
-                    <div className="flex items-start gap-2 shrink-0"><OwnedBtn item={item} inf={inf} /><DoneBtn item={item} inf={inf} /></div>
+                    <div className="flex items-start gap-1.5 shrink-0"><OwnedBtn item={item} inf={inf} /><WantedBtn item={item} inf={inf} /><DoneBtn item={item} inf={inf} /></div>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
                     <span>{item.cat} <span className="font-mono">#{item.n}</span></span>

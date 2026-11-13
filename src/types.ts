@@ -38,9 +38,13 @@ export interface Item {
   [key: string]: any;
 }
 
+export interface WardrobeEntry {
+  owned: number;
+  done: boolean;
+  /** On the wishlist (only meaningful while not owned). */
+  wanted?: boolean;
+}
+
 export interface WardrobeData {
-  [key: string]: {
-    owned: number;
-    done: boolean;
-  };
+  [key: string]: WardrobeEntry;
 }
