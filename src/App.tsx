@@ -13,6 +13,8 @@ import UserMenu from './auth/UserMenu';
 import AccountPage from './pages/AccountPage';
 import ProfilePage from './pages/ProfilePage';
 import MyWardrobePage from './pages/MyWardrobePage';
+import ContactPage from './pages/ContactPage';
+import AboutPage from './pages/AboutPage';
 import { useWardrobe } from './wardrobe/useWardrobe';
 import { useCollections } from './wardrobe/useCollections';
 import { deriveInfo } from './guide/status';
@@ -325,7 +327,7 @@ function AppShell() {
                 <span className="hidden md:inline whitespace-nowrap">My Wardrobe</span>
                 <span className="min-w-[2.25rem] h-6 px-1.5 rounded-full bg-amber-600 text-white text-xs font-bold tabular-nums grid place-items-center" aria-hidden>{badge}</span>
               </NavLink>
-              <a href="https://github.com/wdoucette/pikkis-info" target="_blank" rel="noreferrer" className="hover:text-amber-700 dark:hover:text-amber-300 hidden sm:inline">GitHub</a>
+              <NavLink to="/about" className={({ isActive }) => `hidden lg:inline hover:text-amber-700 dark:hover:text-amber-300 ${isActive ? 'text-amber-700 dark:text-amber-300 font-semibold' : ''}`}>About</NavLink>
               <UserMenu />
             </nav>
           </div>
@@ -368,6 +370,8 @@ function AppShell() {
               <MyWardrobePage items={items} meta={meta} wardrobe={wardrobe} setWardrobe={updateWardrobe} loading={loading}
                 defaults={defaults} sync={sync} collections={collections} onSaveView={saveCollection} onDeleteView={removeCollection} />
             } />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/contact" element={<ContactPage />} />
             <Route path="/account" element={
               <AccountPage wardrobe={wardrobe} itemCount={items.length} collections={collections}
                 onUpdateCollection={updateCollection} onDeleteCollection={removeCollection} />
@@ -382,11 +386,18 @@ function AppShell() {
           </Routes>
         </main>
 
-        <footer id="about" className="bg-zinc-900 text-zinc-300 py-12 border-t border-zinc-800 mt-20">
+        <footer className="bg-zinc-900 text-zinc-300 py-10 border-t border-zinc-800 mt-20">
           <div className="max-w-7xl mx-auto px-6 text-center text-xs leading-relaxed">
-            <p>Fan-made decompose guide for <span className="text-amber-200">Love Nikki: Dress Up Queen</span>. Not affiliated with Elex, Paper Games, Nikki Calc, or the original Nikki's Info.</p>
-            <p className="mt-3">Item data from <span className="text-amber-200">Nikki Calc (nikkicalc.com)</span>. Editorial comments and corrections from the Pikki's Info Overrides sheet.</p>
-            <p className="mt-6 text-[11px] text-zinc-400">© Pikki's Info • Accounts by Supabase • Data updates weekly via GitHub Actions</p>
+            <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm font-semibold mb-6">
+              <Link to="/" className="hover:text-amber-200">Decompose Guide</Link>
+              <Link to="/my-wardrobe" className="hover:text-amber-200">My Wardrobe</Link>
+              <Link to="/about" className="hover:text-amber-200">About</Link>
+              <Link to="/contact" className="hover:text-amber-200">Contact</Link>
+              <a href="https://github.com/wdoucette/pikkis-info" target="_blank" rel="noreferrer" className="hover:text-amber-200">GitHub</a>
+            </nav>
+            <p>Unofficial, non-commercial fan site for <span className="text-amber-200">Love Nikki: Dress Up Queen</span>. Love Nikki and its characters, items and art belong to Elex / Papergames. Not affiliated or endorsed.</p>
+            <p className="mt-2">Item data from <span className="text-amber-200">Nikki Calc</span> and the community · corrections reviewed by hand · refreshed weekly.</p>
+            <p className="mt-5 text-zinc-400">© 2026 Pikki's Info · Vernon, BC, Canada · Code MIT · Original content CC BY-NC 4.0</p>
           </div>
         </footer>
         <AuthDialog />

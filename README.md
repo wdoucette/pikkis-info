@@ -43,3 +43,16 @@ Data credit in footer.
   Never commit a `service_role` / secret key.
 - Signed-out users keep their wardrobe in `localStorage`; after signing in they are offered a one-click merge.
 - Routes: `/account` (profile, preferences, collections, password), `/u/:username` (public profile).
+
+## Contact form
+
+- `/contact` stores messages in Supabase `public.contact_messages` (insert-only for the public; read them in the Supabase dashboard
+  Table Editor or SQL). A trigger fills server-side fields, hashes the sender IP with a private salt, and rate-limits
+  (5 per hour per IP, 30 per minute overall). Client side: honeypot field + 30 s / 5 per hour throttle.
+- Optional email notification: set `VITE_WEB3FORMS_KEY` on Vercel (a free Web3Forms access key; public by design) and redeploy.
+  No recipient address is stored in this repo.
+
+## Licensing
+
+Code: MIT (`LICENSE`). Original site text and the "P" artwork: CC BY-NC 4.0 (`LICENSE-CONTENT.md`).
+Love Nikki names, items, art and game data belong to Elex / Papergames; this is an unofficial, non-commercial fan project.
