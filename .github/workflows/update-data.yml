@@ -1,0 +1,61 @@
+name: Update Pikki's Info Data
+
+on:
+  schedule:
+    - cron: '0 12 * * 1'  # Every Monday at 12:00 UTC
+  workflow_dispatch:      # Allow manual trigger from GitHub UI
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas gspread google-auth pygithub
+
+      - name: Run data update script
+        run: python scripts/update_data.py
+        env:
+          GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}  # Optional for private sheet
+
+      - name: Check for changes
+        id: changes
+        run: |
+          git diff --quiet HEAD -- data/ || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Commit and push updated data (if changed)
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "pikki-data-bot"
+          git config user.email "bot@pikkis.info"
+          git add data/pikkis-info.min.json data/version.json data/overrides.csv
+          git commit -m "chore(data): update to latest Nikki Calc + overrides $(date +'%Y-%m-%d')"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create PR instead of direct push (optional safer mode)
+        if: steps.changes.outputs.changed == 'true' && false  # Change to true when you want PR flow
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore(data): update to latest Nikki Calc + overrides"
+          title: "chore(data): weekly data update"
+          body: "Automated update from Nikki Calc + Pikki's Info Overrides sheet."
+          branch: data-update-$(date +'%Y%m%d')

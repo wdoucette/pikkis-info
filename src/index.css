@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+:root {
+  --p-primary: 234 179 8; /* warm gold for Pikki brand */
+  --p-accent: 245 158 11;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer base {
+  html {
+    color-scheme: light dark;
+  }
+}
+
+@layer components {
+  .p-btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all active:scale-95 flex items-center gap-2;
+  }
+  
+  .p-tab {
+    @apply px-5 py-2.5 text-sm font-medium border-b-2 border-transparent hover:border-yellow-400 transition-colors;
+  }
+  
+  .p-tab-active {
+    @apply border-yellow-400 text-yellow-600 dark:text-yellow-400;
+  }
+  
+  .item-row {
+    @apply hover:bg-amber-50 dark:hover:bg-zinc-800 transition-colors;
+  }
+  
+  .status-extra {
+    @apply text-emerald-600 dark:text-emerald-400;
+  }
+  
+  .status-needed {
+    @apply text-amber-600 dark:text-amber-400;
+  }
+  
+  .status-cannot {
+    @apply text-red-600 dark:text-red-400;
+  }
+}
