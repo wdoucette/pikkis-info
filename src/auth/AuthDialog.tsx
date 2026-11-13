@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { X, Mail, KeyRound, UserPlus } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { X, KeyRound, UserPlus } from 'lucide-react';
 import { supabase, friendlyError, USERNAME_RE } from '../lib/supabase';
 import { useAuth, type AuthMode } from './AuthProvider';
-
-const redirect = (path = '/account') => `${window.location.origin}${path}`;
 
 export default function AuthDialog() {
   const { authOpen, authMode, closeAuth } = useAuth();
@@ -40,14 +39,10 @@ export default function AuthDialog() {
         if (u && !USERNAME_RE.test(u)) throw new Error('Username: 3–24 characters, lowercase letters, numbers and _ only.');
         if (password.length < 8) throw new Error('Password must be at least 8 characters.');
         const { data, error } = await supabase.auth.signUp({
-          email, password, options: { emailRedirectTo: redirect(), data: u ? { username: u } : {} },
+          email, password, options: { data: u ? { username: u } : {} },
         });
         if (error) throw error;
-        if (!data.session) setInfo('Account created. Check your email for a confirmation link, then sign in.');
-      } else {
-        const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: redirect(), shouldCreateUser: true } });
-        if (error) throw error;
-        setInfo('Check your email for a sign-in link.');
+        if (!data.session) setInfo('Account created. Please sign in.');
       }
     } catch (err) {
       setError(friendlyError(err));
@@ -56,18 +51,10 @@ export default function AuthDialog() {
     }
   };
 
-  const forgot = async () => {
-    if (!email) { setError('Enter your email above first.'); return; }
-    setBusy(true); setError(null);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: redirect('/account?reset=1') });
-    setBusy(false);
-    if (error) setError(friendlyError(error)); else setInfo('If that account exists, a password reset link is on its way.');
-  };
-
-  const tabs: { k: AuthMode; label: string; icon: typeof Mail }[] = [
+  // Password only: this site never sends email (no magic links, confirmations or reset emails).
+  const tabs: { k: AuthMode; label: string; icon: typeof KeyRound }[] = [
     { k: 'signin', label: 'Sign in', icon: KeyRound },
     { k: 'signup', label: 'Create account', icon: UserPlus },
-    { k: 'magic', label: 'Email link', icon: Mail },
   ];
   const input = 'w-full h-11 px-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200 dark:focus:ring-amber-900 text-sm';
 
@@ -80,7 +67,7 @@ export default function AuthDialog() {
           <h2 id="auth-title" className="font-display text-2xl text-zinc-900 dark:text-zinc-50">Your Pikki wardrobe</h2>
           <button type="button" onClick={closeAuth} aria-label="Close" className="w-9 h-9 grid place-items-center rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800"><X className="w-5 h-5" /></button>
         </div>
-        <div role="tablist" className="grid grid-cols-3 gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-2xl mb-4">
+        <div role="tablist" className="grid grid-cols-2 gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-2xl mb-4">
           {tabs.map(t => (
             <button key={t.k} type="button" role="tab" aria-selected={mode === t.k} onClick={() => { setMode(t.k); setError(null); setInfo(null); }}
               className={`h-9 rounded-xl text-xs sm:text-sm font-semibold inline-flex items-center justify-center gap-1.5 ${mode === t.k ? 'bg-white dark:bg-zinc-900 text-amber-700 dark:text-amber-300 shadow-sm' : 'text-zinc-600 dark:text-zinc-300'}`}>
@@ -93,7 +80,7 @@ export default function AuthDialog() {
             <span className="block mb-1 text-zinc-600 dark:text-zinc-300">Email</span>
             <input ref={firstRef} className={input} type="email" required autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} />
           </label>
-          {mode !== 'magic' && (
+          {(
             <label className="block text-sm">
               <span className="block mb-1 text-zinc-600 dark:text-zinc-300">Password</span>
               <input className={input} type="password" required minLength={mode === 'signup' ? 8 : undefined}
@@ -107,18 +94,19 @@ export default function AuthDialog() {
                 pattern="[a-z0-9_]{3,24}" placeholder="e.g. pikki_fan" autoComplete="username" />
             </label>
           )}
-          {mode === 'magic' && <p className="text-xs text-zinc-500">We'll email you a one-time link. No password needed.</p>}
           <div className="min-h-5 text-sm" aria-live="polite">
             {error && <p className="text-red-700 dark:text-red-300">{error}</p>}
             {info && <p className="text-emerald-700 dark:text-emerald-300">{info}</p>}
           </div>
           <button type="submit" disabled={busy}
             className="w-full h-11 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-semibold disabled:opacity-60">
-            {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Email me a link'}
+            {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}
           </button>
-          {mode === 'signin' && (
-            <button type="button" onClick={forgot} className="w-full text-xs text-zinc-500 hover:text-amber-700 dark:hover:text-amber-300">Forgot password?</button>
-          )}
+          <p className="text-center text-xs text-zinc-500 min-h-4">
+            {mode === 'signin'
+              ? <>Forgot your password? Send us a message via <Link to="/contact?topic=other" onClick={closeAuth} className="underline hover:text-amber-700 dark:hover:text-amber-300">Contact</Link> and we'll help.</>
+              : 'Your email is only used as your login. We never send you email.'}
+          </p>
         </form>
         <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">Your wardrobe is saved to your account so it follows you between devices. Profiles are private unless you make them public.</p>
       </div>

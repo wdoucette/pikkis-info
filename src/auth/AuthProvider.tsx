@@ -17,7 +17,7 @@ interface AuthState {
   closeAuth: () => void;
   authMode: AuthMode;
 }
-export type AuthMode = 'signin' | 'signup' | 'magic';
+export type AuthMode = 'signin' | 'signup';
 
 const Ctx = createContext<AuthState | null>(null);
 

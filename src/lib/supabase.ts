@@ -48,8 +48,7 @@ export function friendlyError(e: unknown): string {
   const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : '';
   if (code === '23505' || /duplicate key/i.test(msg)) return 'That username is already taken.';
   if (code === 'over_email_send_rate_limit' || /rate limit/i.test(msg)) return 'Too many emails sent recently. Please try again in an hour, or sign in with your password.';
-  if (code === 'email_address_not_authorized' || /not authorized/i.test(msg)) return 'Email sign-in links are not enabled for this address yet. Please use a password.';
   if (/Invalid login credentials/i.test(msg)) return 'Wrong email or password.';
-  if (/Email not confirmed/i.test(msg)) return 'Please confirm your email first (check your inbox).';
+  if (/Email not confirmed/i.test(msg)) return 'This account is not activated yet. Please send us a message via Contact.';
   return msg;
 }

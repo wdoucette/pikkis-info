@@ -179,7 +179,7 @@ export default function AccountPage({ wardrobe, itemCount, collections, onUpdate
 
       <form onSubmit={changePw} className={`${card} space-y-3 ${params.get('reset') ? 'ring-2 ring-amber-400' : ''}`} aria-labelledby="pw-h">
         <h2 id="pw-h" className="font-display text-xl">{params.get('reset') ? 'Choose a new password' : 'Password'}</h2>
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">Signed in as {user.email}. Set or change your password (useful if you signed in with an email link).</p>
+        <p className="text-sm text-zinc-600 dark:text-zinc-300">Signed in as {user.email}. Change your password here. To change your email, send us a message via Contact.</p>
         <div className="flex gap-3 flex-col sm:flex-row">
           <input className={input} type="password" autoComplete="new-password" minLength={8} value={pw} onChange={e => setPw(e.target.value)} placeholder="New password (8+ characters)" aria-label="New password" />
           <button type="submit" className="h-11 px-5 rounded-2xl border border-zinc-300 dark:border-zinc-600 hover:border-amber-400 font-semibold text-sm shrink-0">Update password</button>
