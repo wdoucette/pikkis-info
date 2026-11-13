@@ -131,12 +131,22 @@ function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loading }: {
       });
     }
 
-    // Search
+    // Enhanced semantic search across multiple fields
     if (debouncedSearchTerm) {
       const fuse = new Fuse(result, {
-        keys: ['name', 'cat', 'n'],
-        threshold: 0.3,
+        keys: [
+          { name: 'name', weight: 0.5 },
+          { name: 'cat', weight: 0.2 },
+          { name: 'n', weight: 0.15 },
+          { name: 'comment', weight: 0.1 },
+          { name: 'o', weight: 0.05 },           // Obtained from
+          { name: 'used_to_craft_note', weight: 0.05 }
+        ],
+        threshold: 0.35,           // More forgiving for semantic/fuzzy matches
         isCaseSensitive: false,
+        minMatchCharLength: 2,
+        shouldSort: true,
+        includeScore: true,
       });
       const searchResults = fuse.search(debouncedSearchTerm);
       result = searchResults.map(r => r.item);
@@ -271,7 +281,7 @@ function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loading }: {
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search items... (e.g. Shoes 1 or Simple Sandals)"
+            placeholder="Search anything (name, category, number, comment...)"
             className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:border-amber-400 text-sm"
             autoFocus
           />
@@ -322,6 +332,7 @@ function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loading }: {
         <div className="text-sm text-zinc-500">
           Showing <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">{filteredAndSortedItems.length}</span> of {items.length} items
           {meta && <span className="ml-3 text-xs">• Data v{meta.nikkicalc_version}</span>}
+          {searchTerm && <span className="ml-2 text-amber-600 font-medium">(search: "{searchTerm}")</span>}
         </div>
         <div className="text-xs text-zinc-400 font-mono">sort: {sortBy}</div>
       </div>
