@@ -4,8 +4,8 @@ import { Search, Heart, Edit2, CheckCircle, AlertTriangle, Info, ArrowLeft, Down
 import Fuse from 'fuse.js';
 import { format } from 'date-fns';
 
-const DATA_URL = 'https://raw.githubusercontent.com/wdoucette/pikkis-info/main/data/pikkis-info.min.json';
-const FALLBACK_URL = 'https://cdn.jsdelivr.net/gh/wdoucette/pikkis-info@main/data/pikkis-info.min.json';
+const DATA_URL = 'https://raw.githubusercontent.com/wdoucette/pikkis-info-data/main/data/pikkis-info.min.json';
+const FALLBACK_URL = 'https://cdn.jsdelivr.net/gh/wdoucette/pikkis-info-data@main/data/pikkis-info.min.json';
 
 interface Meta {
   nikkicalc_version: string;
@@ -589,15 +589,17 @@ function App() {
     setLoading(true);
 
     try {
-      let response = await fetch(DATA_URL, { 
-        cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache' }
-      });
-      
-      if (!response.ok && retryCount === 0) {
-        console.warn('Primary URL failed, trying fallback...');
+      // No custom headers: they trigger a CORS preflight that raw.githubusercontent.com rejects.
+      let response: Response | null = null;
+      try {
+        response = await fetch(DATA_URL, { cache: 'no-store' });
+      } catch (e) {
+        console.warn('Primary URL failed, trying fallback...', e);
+      }
+      if ((!response || !response.ok) && retryCount === 0) {
         response = await fetch(FALLBACK_URL, { cache: 'no-store' });
       }
+      if (!response) throw new Error('No response');
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
