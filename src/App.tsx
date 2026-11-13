@@ -1,58 +1,13 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useSearchParams, useParams, useNavigate } from 'react-router-dom';
-import { Search, Heart, Edit2, CheckCircle, AlertTriangle, Info, ArrowLeft, Download, Upload } from 'lucide-react';
-import Fuse from 'fuse.js';
-import { format } from 'date-fns';
+import { BrowserRouter as Router, Routes, Route, Link, useParams } from 'react-router-dom';
+import { Edit2, ArrowLeft } from 'lucide-react';
 
 const DATA_URL = 'https://raw.githubusercontent.com/wdoucette/pikkis-info-data/main/data/pikkis-info.min.json';
 const FALLBACK_URL = 'https://cdn.jsdelivr.net/gh/wdoucette/pikkis-info-data@main/data/pikkis-info.min.json';
 
-interface Meta {
-  nikkicalc_version: string;
-  nikkicalc_updated: string;
-  generated: string;
-  item_count: number;
-  credit: string;
-  [key: string]: any;
-}
-
-interface CraftItem {
-  id: number;
-  n?: number;
-  name?: string;
-  q: number;
-}
-
-interface Item {
-  id: number;
-  n: number;
-  name: string;
-  cat: string;
-  r?: number;
-  rd: number;
-  rr?: number;
-  rdc?: number;
-  rrc?: number;
-  fut?: number;
-  u?: CraftItem[];
-  cf?: { id: number; q: number }[];
-  ev?: any;
-  d?: { n: string; id?: number; name?: string }[];
-  o?: string;
-  comment?: string;
-  used_to_craft_note?: string;
-  cannot_decompose?: boolean;
-  hidden?: boolean;
-  edited?: string[];
-  [key: string]: any;
-}
-
-interface WardrobeData {
-  [key: string]: {
-    owned: number;
-    done: boolean;
-  };
-}
+import type { Item, Meta, WardrobeData } from './types';
+import DecomposeGuide, { StatusBadge, Hearts, itemPath } from './DecomposeGuide';
+import { deriveInfo } from './guide/status';
 
 const PikkiMonogram = () => (
   <div className="flex items-center gap-3">
@@ -60,7 +15,7 @@ const PikkiMonogram = () => (
       P
     </div>
     <div>
-      <div className="text-3xl font-bold tracking-tighter text-amber-950 dark:text-amber-100">Pikki's Info</div>
+      <div className="text-2xl sm:text-3xl font-bold tracking-tighter text-amber-950 dark:text-amber-100 whitespace-nowrap">Pikki's Info</div>
       <div className="text-[10px] text-amber-600 -mt-1 font-mono">DECOMPOSE GUIDE</div>
     </div>
   </div>
@@ -76,435 +31,90 @@ const LoadingSpinner = () => (
 
 
 
-const StatusBadge = ({ status }: { status: string }) => {
-  const colors = {
-    'Extra clothes': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
-    'Still needed': 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
-    'Cannot decompose': 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
-    'Not owned': 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
-  };
-  return (
-    <span className={`inline-block px-3 py-0.5 text-xs font-medium rounded-full ${colors[status as keyof typeof colors] || 'bg-zinc-100 text-zinc-500'}`}>
-      {status}
-    </span>
-  );
-};
-
-function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loading }: { 
-  items: Item[], 
-  meta: Meta | null, 
-  wardrobe: WardrobeData, 
-  setWardrobe: (w: WardrobeData) => void,
-  loading: boolean 
-}) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [searchTerm, setSearchTerm] = useState(searchParams.get('q') || '');
-  const [selectedCategory, setSelectedCategory] = useState(searchParams.get('cat') || 'All');
-  const [selectedStatus, setSelectedStatus] = useState(searchParams.get('status') || 'All');
-  const [sortBy] = useState<'cat' | 'n' | 'name' | 'rd'>('cat');
-  const [sortDir] = useState<'asc' | 'desc'>('asc');
-
-  const categories = useMemo(() => {
-    const cats = new Set(items.map(i => i.cat));
-    return ['All', ...Array.from(cats).sort()];
-  }, [items]);
-
-  const statuses = ['All', 'Extra clothes', 'Still needed', 'Cannot decompose', 'Not owned', 'Left to do'];
-
-  // Debounced search
-  const debouncedSearchTerm = useMemo(() => searchTerm, [searchTerm]);
-
-  const filteredAndSortedItems = useMemo(() => {
-    let result = [...items];
-
-    // Filter by category
-    if (selectedCategory !== 'All') {
-      result = result.filter(item => item.cat === selectedCategory);
+function ItemPage({ items, wardrobe, setWardrobe, loading }: { items: Item[]; wardrobe: WardrobeData; setWardrobe: (w: WardrobeData) => void; loading: boolean }) {
+  const { cat, n, id } = useParams<{ cat?: string; n?: string; id?: string }>();
+  const item = useMemo(() => {
+    if (id) return items.find(i => i.id === parseInt(id, 10));
+    if (cat && n) {
+      const c = decodeURIComponent(cat).toLowerCase();
+      return items.find(i => i.cat.toLowerCase() === c && i.n === parseInt(n, 10));
     }
-
-    // Filter by status
-    if (selectedStatus !== 'All') {
-      result = result.filter(item => {
-        const status = computeItemStatus(item, wardrobe);
-        if (selectedStatus === 'Left to do') return !wardrobe[item.id]?.done;
-        return status === selectedStatus;
-      });
-    }
-
-    // Enhanced semantic search across multiple fields
-    if (debouncedSearchTerm) {
-      const fuse = new Fuse(result, {
-        keys: [
-          { name: 'name', weight: 0.5 },
-          { name: 'cat', weight: 0.2 },
-          { name: 'n', weight: 0.15 },
-          { name: 'comment', weight: 0.1 },
-          { name: 'o', weight: 0.05 },           // Obtained from
-          { name: 'used_to_craft_note', weight: 0.05 }
-        ],
-        threshold: 0.35,           // More forgiving for semantic/fuzzy matches
-        isCaseSensitive: false,
-        minMatchCharLength: 2,
-        shouldSort: true,
-        includeScore: true,
-      });
-      const searchResults = fuse.search(debouncedSearchTerm);
-      result = searchResults.map(r => r.item);
-    }
-
-    // Exclude hidden
-    result = result.filter(item => !item.hidden);
-
-    // Sort
-    result.sort((a, b) => {
-      let valA, valB;
-      if (sortBy === 'cat') {
-        valA = a.cat;
-        valB = b.cat;
-      } else if (sortBy === 'n') {
-        valA = a.n;
-        valB = b.n;
-      } else if (sortBy === 'name') {
-        valA = a.name.toLowerCase();
-        valB = b.name.toLowerCase();
-      } else {
-        valA = a.rd || 0;
-        valB = b.rd || 0;
-      }
-
-      if (valA < valB) return sortDir === 'asc' ? -1 : 1;
-      if (valA > valB) return sortDir === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    return result;
-  }, [items, selectedCategory, selectedStatus, debouncedSearchTerm, sortBy, sortDir, wardrobe]);
-
-  const updateUrlParams = useCallback(() => {
-    const params = new URLSearchParams();
-    if (searchTerm) params.set('q', searchTerm);
-    if (selectedCategory !== 'All') params.set('cat', selectedCategory);
-    if (selectedStatus !== 'All') params.set('status', selectedStatus);
-    setSearchParams(params, { replace: true });
-  }, [searchTerm, selectedCategory, selectedStatus, setSearchParams]);
-
-  useEffect(() => {
-    updateUrlParams();
-  }, [updateUrlParams]);
-
-  const toggleOwned = (itemId: number, currentOwned: number) => {
-    const newOwned = currentOwned > 0 ? 0 : 1;
-    setWardrobe({
-      ...wardrobe,
-      [itemId]: { 
-        ...(wardrobe[itemId] || {}), 
-        owned: newOwned 
-      }
-    });
-  };
-
-  const toggleDone = (itemId: number, currentDone: boolean) => {
-    setWardrobe({
-      ...wardrobe,
-      [itemId]: { 
-        ...(wardrobe[itemId] || { owned: 0 }), 
-        done: !currentDone 
-      }
-    });
-  };
-
-  const computeItemStatus = (item: Item, wardrobeData: WardrobeData): string => {
-    if (item.cannot_decompose) return 'Cannot decompose';
-    const ownedInfo = wardrobeData[item.id];
-    const ownedCount = ownedInfo?.owned || 0;
-    if (ownedCount === 0) return 'Not owned';
-
-    // Simple status for MVP (full logic in later iteration)
-    const hasUses = (item.u && item.u.length > 0) || (item.ev && item.ev.to);
-    if (hasUses) return 'Still needed';
-    return 'Extra clothes';
-  };
-
-  const exportCSV = () => {
-    const headers = ['Item', 'Category', 'No.', 'Owned', 'Done'];
-    const rows = items.map(item => {
-      const w = wardrobe[item.id] || { owned: 0, done: false };
-      return [
-        item.name,
-        item.cat,
-        item.n,
-        w.owned,
-        w.done ? 'Yes' : 'No'
-      ];
-    });
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'pikkis-wardrobe.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+    return undefined;
+  }, [items, id, cat, n]);
+  const backTo = (() => {
+    try { const s = sessionStorage.getItem('pikkis-guide-search'); return s ? `/?${s}` : '/'; } catch { return '/'; }
+  })();
 
   if (loading) return <LoadingSpinner />;
-
-  return (
-    <div className="max-w-7xl mx-auto p-4">
-      {/* Warning Banner */}
-      <div className="mb-8 bg-amber-50 dark:bg-zinc-900 border border-amber-200 dark:border-amber-800 rounded-3xl p-6 text-sm">
-        <div className="flex gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
-          <div>
-            <div className="font-semibold text-amber-800 dark:text-amber-300 mb-1">Do not decompose items you still need</div>
-            <p className="text-amber-700 dark:text-amber-400 leading-relaxed">
-              Check the <span className="font-medium">"Used to craft"</span> and <span className="font-medium">"Required"</span> columns before selling or decomposing.
-              This guide uses the latest Nikki Calc data. Always verify with in-game wardrobe.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Toolbar */}
-      <div className="flex flex-col lg:flex-row gap-4 mb-6 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-3xl p-4 shadow-sm">
-        {/* Search */}
-        <div className="relative flex-1">
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">
-            <Search className="w-5 h-5" />
-          </div>
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search anything (name, category, number, comment...)"
-            className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:border-amber-400 text-sm"
-            autoFocus
-          />
-        </div>
-
-        {/* Category Tabs */}
-        <div className="flex flex-wrap gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-2xl">
-          {categories.slice(0, 8).map(cat => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-5 py-2 text-sm rounded-[14px] font-medium transition-all ${selectedCategory === cat 
-                ? 'bg-white dark:bg-zinc-700 shadow-sm text-amber-600 dark:text-amber-400' 
-                : 'hover:bg-white/60 dark:hover:bg-zinc-700/60'}`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-
-        {/* Status Filter */}
-        <select
-          value={selectedStatus}
-          onChange={(e) => setSelectedStatus(e.target.value)}
-          className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-400"
-        >
-          {statuses.map(s => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-
-        {/* Actions */}
-        <div className="flex gap-2">
-          <button
-            onClick={exportCSV}
-            className="p-btn bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 hover:border-amber-300 text-zinc-700 dark:text-zinc-300"
-          >
-            <Download className="w-4 h-4" /> Export
-          </button>
-          <button className="p-btn bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 hover:border-amber-300 text-zinc-700 dark:text-zinc-300">
-            <Upload className="w-4 h-4" /> Import
-          </button>
-        </div>
-      </div>
-
-      {/* Results count */}
-      <div className="flex justify-between items-center mb-4 px-1">
-        <div className="text-sm text-zinc-500">
-          Showing <span className="font-mono font-medium text-zinc-700 dark:text-zinc-300">{filteredAndSortedItems.length}</span> of {items.length} items
-          {meta && <span className="ml-3 text-xs">• Data v{meta.nikkicalc_version}</span>}
-          {searchTerm && <span className="ml-2 text-amber-600 font-medium">(search: "{searchTerm}")</span>}
-        </div>
-        <div className="text-xs text-zinc-400 font-mono">sort: {sortBy}</div>
-      </div>
-
-      {/* Items Table */}
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-100 dark:border-zinc-700 overflow-hidden shadow-sm">
-        <table className="w-full min-w-full">
-          <thead>
-            <tr className="border-b border-zinc-100 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950">
-              <th className="px-6 py-4 text-left text-xs font-medium text-zinc-500">ITEM</th>
-              <th className="px-6 py-4 text-left text-xs font-medium text-zinc-500">CAT</th>
-              <th className="px-6 py-4 text-left text-xs font-medium text-zinc-500">NO.</th>
-              <th className="px-6 py-4 text-left text-xs font-medium text-zinc-500">RARITY</th>
-              <th className="px-6 py-4 text-left text-xs font-medium text-zinc-500">STATUS</th>
-              <th className="px-6 py-4 text-left text-xs font-medium text-zinc-500">REQUIRED</th>
-              <th className="px-6 py-4 text-left text-xs font-medium text-zinc-500">OWNED</th>
-              <th className="px-6 py-4 text-left text-xs font-medium text-zinc-500">DONE</th>
-              <th className="w-10"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {filteredAndSortedItems.slice(0, 100).map(item => {  // Limit for initial performance
-              const status = computeItemStatus(item, wardrobe);
-              const ownedInfo = wardrobe[item.id] || { owned: 0, done: false };
-              const hasComment = !!item.comment;
-              const isEdited = item.edited && item.edited.length > 0;
-
-              return (
-                <tr key={item.id} className="item-row group">
-                  <td className="px-6 py-4">
-                    <Link 
-                      to={`/wardrobe/${item.cat.toLowerCase()}/${item.n}`}
-                      className="font-medium hover:text-amber-600 dark:hover:text-amber-400 flex items-center gap-2 group-hover:underline"
-                    >
-                      {item.name}
-                      {isEdited && <span className="text-[10px] bg-amber-100 text-amber-600 px-1.5 py-px rounded font-mono">edited</span>}
-                      {hasComment && <Info className="w-3.5 h-3.5 text-amber-400" />}
-                    </Link>
-                  </td>
-                  <td className="px-6 py-4 text-xs text-zinc-500 font-mono">{item.cat}</td>
-                  <td className="px-6 py-4 font-mono text-sm text-zinc-400">#{item.n}</td>
-                  <td className="px-6 py-4">
-                    {item.r && (
-                      <div className="flex items-center gap-px">
-                        {Array.from({ length: Math.min(item.r, 5) }).map((_, i) => (
-                          <Heart key={i} className="w-4 h-4 fill-rose-500 text-rose-500" />
-                        ))}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    <StatusBadge status={status} />
-                  </td>
-                  <td className="px-6 py-4 font-medium tabular-nums">{item.rd}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => toggleOwned(item.id, ownedInfo.owned)}
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-mono border transition-all ${
-                          ownedInfo.owned > 0 
-                            ? 'bg-emerald-100 border-emerald-300 text-emerald-700 dark:bg-emerald-900 dark:border-emerald-700' 
-                            : 'bg-zinc-100 border-zinc-300 hover:bg-zinc-200 dark:bg-zinc-800'
-                        }`}
-                      >
-                        {ownedInfo.owned || '0'}
-                      </button>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <button
-                      onClick={() => toggleDone(item.id, ownedInfo.done)}
-                      className={`w-6 h-6 flex items-center justify-center rounded-md border transition-all ${
-                        ownedInfo.done 
-                          ? 'bg-emerald-500 border-emerald-500 text-white' 
-                          : 'border-zinc-300 dark:border-zinc-600 hover:border-emerald-400'
-                      }`}
-                    >
-                      {ownedInfo.done && <CheckCircle className="w-4 h-4" />}
-                    </button>
-                  </td>
-                  <td className="px-6 py-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Link to={`/wardrobe/${item.cat.toLowerCase()}/${item.n}`} className="text-amber-500 hover:text-amber-600">
-                      →
-                    </Link>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {filteredAndSortedItems.length === 0 && (
-          <div className="p-12 text-center text-zinc-400">
-            No items match your filters.
-          </div>
-        )}
-        {filteredAndSortedItems.length > 100 && (
-          <div className="p-4 text-center text-xs text-zinc-400 border-t">
-            Showing first 100 results. Use search or filters to narrow down.
-          </div>
-        )}
-      </div>
-
-      {/* Data footer */}
-      {meta && (
-        <div className="mt-8 text-center text-xs text-zinc-400 font-mono">
-          Data: Nikki Calc v{meta.nikkicalc_version} • game data {format(new Date(meta.nikkicalc_updated), 'yyyy-MM-dd')} • bundle {format(new Date(meta.generated), 'yyyy-MM-dd')}
-          <div className="mt-1">{meta.credit}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ItemPage({ items, wardrobe }: { items: Item[], wardrobe: WardrobeData }) {
-  const { cat, n } = useParams<{ cat?: string; n?: string }>();
-  const navigate = useNavigate();
-  const item = items.find(i => 
-    (cat && n && i.cat.toLowerCase() === cat.toLowerCase() && i.n === parseInt(n)) || 
-    false // TODO: support /item/id later
-  );
-
   if (!item) {
     return (
       <div className="max-w-2xl mx-auto p-8 text-center">
         <h2 className="text-2xl font-semibold mb-4">Item not found</h2>
-        <Link to="/" className="text-amber-600 hover:underline inline-flex items-center gap-2">
+        <Link to={backTo} className="text-amber-600 hover:underline inline-flex items-center gap-2">
           <ArrowLeft className="w-4 h-4" /> Back to Decompose Guide
         </Link>
       </div>
     );
   }
 
-  const ownedInfo = wardrobe[item.id] || { owned: 0, done: false };
-  // const status = 'Extra clothes'; // Placeholder - full impl in next pass
+  const info = deriveInfo(item, wardrobe);
+  const byId = (pid: number) => items.find(i => i.id === pid);
+  const setEntry = (patch: Partial<{ owned: number; done: boolean }>) =>
+    setWardrobe({ ...wardrobe, [item.id]: { ...(wardrobe[item.id] ?? { owned: 0, done: false }), ...patch } });
+  const evTo: { id: number; num?: number }[] = Array.isArray(item.ev?.to) ? item.ev.to : [];
+  const evFrom: { id: number; num?: number }[] = Array.isArray(item.ev?.from) ? item.ev.from : [];
+  const usedIds = new Set((item.u || []).map(u => u.id));
+  const heldBy = [
+    item.d?.length ? 'Customizable' : null,
+    item.ev ? 'Evolvable' : null,
+    item.u?.length ? 'Design material' : null,
+  ].filter(Boolean);
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <button 
-        onClick={() => navigate('/')}
-        className="flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-700 mb-8"
-      >
+    <div className="max-w-4xl mx-auto p-4 sm:p-6">
+      <Link to={backTo} className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-700 mb-6">
         <ArrowLeft className="w-4 h-4" /> Back to Guide
-      </button>
+      </Link>
 
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow p-8">
-        <div className="flex justify-between items-start mb-8">
+      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow p-5 sm:p-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-8">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-mono rounded-full">{item.cat} #{item.n}</span>
-              {item.r && <div className="flex">{Array(item.r).fill(0).map((_, i) => <Heart key={i} className="w-5 h-5 text-rose-500" />)}</div>}
+              <Hearts r={item.r} />
+              <StatusBadge status={info.status} waiting={info.waiting} />
             </div>
-            <h1 className="text-4xl font-bold mt-3 text-balance">{item.name}</h1>
+            <h1 className="text-3xl sm:text-4xl font-bold mt-3 text-balance">{item.name}</h1>
             {item.edited && item.edited.length > 0 && (
               <div className="inline-flex items-center gap-2 mt-2 px-4 py-1 bg-amber-100 text-amber-700 text-xs rounded-2xl">
                 <Edit2 className="w-3 h-3" /> Edited by Pikki ({item.edited.join(', ')})
               </div>
             )}
+            {item.hidden && <div className="mt-2 text-xs text-zinc-500">This item is hidden from the guide list.</div>}
           </div>
           <div className="flex gap-3">
-            <button onClick={() => {/* toggle owned */}} className="px-5 py-2 border rounded-2xl text-sm flex items-center gap-2 hover:bg-zinc-50">
-              Owned: <span className="font-mono font-bold">{ownedInfo.owned}</span>
+            <button type="button" onClick={() => setEntry({ owned: info.owned > 0 ? 0 : 1 })} aria-pressed={info.owned > 0}
+              className={`px-5 py-2 border rounded-2xl text-sm flex items-center gap-2 ${info.owned > 0 ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
+              Owned: <span className="font-mono font-bold">{info.owned}</span>
             </button>
-            <button onClick={() => {/* toggle done */}} className={`px-6 py-2 rounded-2xl text-sm font-medium ${ownedInfo.done ? 'bg-emerald-600 text-white' : 'border'}`}>
-              {ownedInfo.done ? '✓ Done' : 'Mark Done'}
+            <button type="button" onClick={() => setEntry({ done: !info.done })} aria-pressed={info.done}
+              className={`px-6 py-2 rounded-2xl text-sm font-medium ${info.done ? 'bg-emerald-600 text-white' : 'border'}`}>
+              {info.done ? '✓ Done' : 'Mark Done'}
             </button>
           </div>
         </div>
 
+        {item.cannot_decompose && (
+          <div className="mb-6 px-4 py-3 bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300 rounded-2xl text-sm font-medium">Cannot decompose</div>
+        )}
+        {item.fut === 1 && (
+          <div className="mb-6 px-4 py-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-2xl text-sm">Some future recipes may be missing for this item.</div>
+        )}
+
         {item.comment && (
-          <div className="mb-10 bg-amber-50 border-l-4 border-amber-400 p-6 rounded-r-2xl">
+          <div className="mb-10 bg-amber-50 dark:bg-amber-950/40 border-l-4 border-amber-400 p-6 rounded-r-2xl">
             <div className="uppercase text-amber-500 text-xs tracking-widest mb-2">EDITORIAL NOTE</div>
-            <p className="text-lg leading-relaxed text-amber-800">{item.comment}</p>
+            <p className="text-lg leading-relaxed text-amber-800 dark:text-amber-200">{item.comment}</p>
           </div>
         )}
 
@@ -515,53 +125,85 @@ function ItemPage({ items, wardrobe }: { items: Item[], wardrobe: WardrobeData }
           </div>
         )}
 
-        {/* Used to Craft - the most important section */}
-        {item.u && item.u.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
+          {[
+            { label: 'Required', v: item.rd, f: 'rd', hint: 'Recipes + evolutions (direct)', main: true },
+            { label: 'Incl. recolours', v: item.rdc ?? item.rd, f: 'rdc', hint: 'Each recolour uses one base copy' },
+            { label: 'Full tree', v: item.rr, f: 'rr', hint: 'Recursive, whole crafting tree' },
+            { label: 'Tree + recolours', v: item.rrc, f: 'rrc', hint: 'Recursive incl. recolours' },
+          ].map(x => (
+            <div key={x.f} className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800" title={x.hint}>
+              <div className="text-[11px] uppercase tracking-widest text-zinc-500">{x.label}{item.edited?.includes(x.f) && <span className="text-amber-600"> · edited</span>}</div>
+              <div className={`tabular-nums ${x.main ? 'text-4xl text-amber-500 font-light' : 'text-2xl text-zinc-700 dark:text-zinc-200'}`}>{x.v ?? '—'}</div>
+              <div className="text-[11px] text-zinc-400 mt-1">{x.hint}</div>
+            </div>
+          ))}
+        </div>
+
+        {(item.u && item.u.length > 0) || evTo.length > 0 ? (
           <div className="mb-12">
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
               <div className="text-lg font-semibold">Used to craft</div>
               <div className="text-xs bg-rose-100 text-rose-700 px-3 py-1 rounded-full">Critical for decompose decisions</div>
             </div>
-            <div className="space-y-3">
-              {item.u.map((craft, idx) => (
-                <Link 
-                  key={idx}
-                  to={`/item/${craft.id}`} 
-                  className="block p-5 bg-zinc-50 hover:bg-amber-50 dark:bg-zinc-800 rounded-2xl group flex justify-between items-center border border-transparent hover:border-amber-200"
-                >
-                  <div className="font-medium">{craft.name || `Item #${craft.id}`}</div>
-                  <div className="text-right">
-                    <div className="text-xs text-zinc-500">Need</div>
-                    <div className="font-mono text-xl font-semibold text-rose-500">×{craft.q}</div>
-                  </div>
-                </Link>
-              ))}
+            <div className="text-sm text-zinc-500 mb-4">
+              Waiting on <b>{info.waiting}</b> unowned item{info.waiting === 1 ? '' : 's'}
+              {heldBy.length > 0 && <> · Held back by: {heldBy.join(', ')}</>}
+            </div>
+            <div className="grid sm:grid-cols-2 gap-2">
+              {[...(item.u || []).map(c => ({ id: c.id, q: c.q, name: c.name, evo: false })),
+                ...evTo.filter(e => !usedIds.has(e.id)).map(e => ({ id: e.id, q: e.num ?? 1, name: byId(e.id)?.name, evo: true }))].map((craft, idx) => {
+                const target = byId(craft.id);
+                const owned = (wardrobe[craft.id]?.owned || 0) > 0;
+                return (
+                  <Link key={idx} to={target ? itemPath(target) : `/item/${craft.id}`}
+                    className="p-4 bg-zinc-50 hover:bg-amber-50 dark:bg-zinc-800 rounded-2xl flex justify-between items-center gap-3 border border-transparent hover:border-amber-200">
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{craft.name || target?.name || `Item #${craft.id}`}</div>
+                      <div className="text-xs text-zinc-500">{target ? `${target.cat} #${target.n}` : ''}{craft.evo ? ' · evolution' : ''}{owned ? ' · owned' : ''}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xs text-zinc-500">Need</div>
+                      <div className="font-mono text-xl font-semibold text-rose-500">×{craft.q}</div>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
             {item.used_to_craft_note && <p className="mt-4 text-sm text-zinc-500 italic">{item.used_to_craft_note}</p>}
           </div>
+        ) : (
+          <div className="mb-10 text-sm text-zinc-500">Not used to craft anything in the current data.</div>
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div>
-            <div className="text-xs uppercase tracking-widest text-zinc-500 mb-3">REQUIRED IN WARDROBE</div>
-            <div className="text-6xl font-light tabular-nums text-amber-500">{item.rd}</div>
-            {item.rdc && item.rdc > item.rd && (
-              <div className="text-sm text-amber-600 mt-1">incl. recolours: {item.rdc}</div>
-            )}
-            <div className="mt-6 text-xs leading-relaxed text-zinc-500 max-w-xs">
-              Main required count (recipes + evolutions). Recolours are shown separately as they consume an additional base copy.
+          {(item.cf?.length || evFrom.length) ? (
+            <div>
+              <div className="text-xs uppercase tracking-widest text-zinc-500 mb-4">MADE FROM</div>
+              <div className="space-y-2">
+                {[...(item.cf || []).map(c => ({ id: c.id, q: c.q })), ...evFrom.map(e => ({ id: e.id, q: e.num ?? 1 }))].map((c, i) => {
+                  const src = byId(c.id);
+                  return (
+                    <Link key={i} to={src ? itemPath(src) : `/item/${c.id}`} className="flex justify-between p-3 bg-zinc-50 dark:bg-zinc-800 hover:bg-amber-50 rounded-2xl text-sm">
+                      <span>{src?.name || `Item #${c.id}`}</span><span className="font-mono text-zinc-500">×{c.q}</span>
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {item.d && item.d.length > 0 && (
             <div>
               <div className="text-xs uppercase tracking-widest text-zinc-500 mb-4">CUSTOMISATIONS / DYES</div>
               <div className="space-y-2">
-                {item.d.map((dye, i) => (
-                  <div key={i} className="flex items-center gap-3 p-3 bg-zinc-50 rounded-2xl text-sm">
-                    {dye.name || 'Recolour'}
-                  </div>
-                ))}
+                {item.d.map((dye, i) => {
+                  const t = dye.id ? byId(dye.id) : undefined;
+                  const body = <>{dye.name || dye.n || 'Recolour'}{t && <span className="text-xs text-zinc-500 ml-2">{t.cat} #{t.n}</span>}</>;
+                  return t
+                    ? <Link key={i} to={itemPath(t)} className="block p-3 bg-zinc-50 dark:bg-zinc-800 hover:bg-amber-50 rounded-2xl text-sm">{body}</Link>
+                    : <div key={i} className="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-2xl text-sm">{body}</div>;
+                })}
               </div>
             </div>
           )}
@@ -642,18 +284,18 @@ function App() {
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
         {/* Top Navigation */}
         <header className="sticky top-0 z-50 bg-white/90 dark:bg-zinc-900/90 border-b border-zinc-100 dark:border-zinc-800 backdrop-blur-lg">
-          <div className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-5 flex items-center justify-between gap-3">
             <Link to="/">
               <PikkiMonogram />
             </Link>
             
-            <div className="flex items-center gap-8 text-sm">
-              <Link to="/" className="hover:text-amber-600 font-medium">Decompose Guide</Link>
+            <div className="flex items-center gap-4 sm:gap-8 text-xs sm:text-sm">
+              <Link to="/" className="hover:text-amber-600 font-medium hidden sm:inline">Decompose Guide</Link>
               <a href="https://github.com/wdoucette/pikkis-info" target="_blank" className="hover:text-amber-600">GitHub</a>
               <a href="#about" className="text-zinc-400 hover:text-zinc-600">About</a>
             </div>
             
-            <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
+            <div className="hidden md:flex items-center gap-2 text-xs font-mono text-zinc-400">
               FAN RECONSTRUCTION
             </div>
           </div>
@@ -671,10 +313,10 @@ function App() {
               />
             } />
             <Route path="/wardrobe/:cat/:n" element={
-              <ItemPage items={items} wardrobe={wardrobe} />
+              <ItemPage items={items} wardrobe={wardrobe} setWardrobe={updateWardrobe} loading={loading} />
             } />
             <Route path="/item/:id" element={
-              <div className="p-12 text-center">Item ID routing coming soon</div>
+              <ItemPage items={items} wardrobe={wardrobe} setWardrobe={updateWardrobe} loading={loading} />
             } />
           </Routes>
         </main>
