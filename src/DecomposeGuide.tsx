@@ -11,6 +11,7 @@ import { filterStateFrom, collectionHref } from './wardrobe/useCollections';
 import { format } from 'date-fns';
 import { findGroup, groupSlug, type CategoryGroup } from './guide/groups';
 import { useGroups } from './wardrobe/CategoryGroupsContext';
+import { COLUMN_SORTS, sortLabel } from './guide/sort';
 import OwnedInput, { clampOwned } from './wardrobe/OwnedInput';
 import CategoryGroupsDialog from './wardrobe/CategoryGroupsDialog';
 import type { Item, Meta, WardrobeData } from './types';
@@ -650,7 +651,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
       <div className="mb-3 px-1"><Pager where="top" /></div>
       {hasQuery && (
         <div className="mb-3 px-1 text-xs text-zinc-500">
-          {sort === 'relevance' ? 'Sorted by relevance' : <>Sorted by {sort} · <button type="button" className="text-amber-700 dark:text-amber-400 hover:underline" onClick={() => update({ sort: null, dir: null })}>sort by relevance</button></>}
+          {sort === 'relevance' ? 'Sorted by relevance' : <>Sorted by {sortLabel(sort)} ({dir === 'asc' ? 'ascending' : 'descending'}) · <button type="button" className="text-amber-700 dark:text-amber-400 hover:underline" onClick={() => update({ sort: null, dir: null })}>sort by relevance</button></>}
           {parsed.unknown.length > 0 && <> · unknown filter {parsed.unknown.join(', ')} searched as text</>}
         </div>
       )}
@@ -734,14 +735,19 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
 
           {/* Mobile cards */}
           <div className="lg:hidden space-y-2">
-            <div className="flex items-center gap-2 text-xs text-zinc-500 px-1">
-              <label htmlFor="mobile-sort">Sort</label>
+            <div className="flex items-center gap-2 text-sm px-1">
+              <label htmlFor="mobile-sort" className="text-xs text-zinc-500 shrink-0">Sort by</label>
               <select id="mobile-sort" value={sort} onChange={e => setSort(e.target.value as SortKey)}
-                className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-1">
-                {SORT_KEYS.filter(k => k !== 'relevance' || hasQuery).map(k => <option key={k} value={k}>{k}</option>)}
+                className="flex-1 min-w-0 h-10 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 text-sm">
+                {hasQuery && <option value="relevance">{sortLabel('relevance')}</option>}
+                {COLUMN_SORTS.map(k => <option key={k} value={k}>{sortLabel(k)}</option>)}
+                {sort === 'waiting' && <option value="waiting">{sortLabel('waiting')}</option>}
               </select>
-              <button type="button" onClick={() => update({ sort, dir: dir === 'asc' ? 'desc' : 'asc' })} className="px-2 py-1 border rounded-lg border-zinc-200 dark:border-zinc-700" aria-label="Toggle sort direction">
-                {dir === 'asc' ? '↑ asc' : '↓ desc'}
+              <button type="button" onClick={() => update({ sort, dir: dir === 'asc' ? 'desc' : 'asc' })}
+                className="shrink-0 h-10 px-3 inline-flex items-center gap-1 border rounded-xl border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-semibold"
+                aria-label={`Sort direction: ${dir === 'asc' ? 'ascending' : 'descending'}. Tap to reverse`}>
+                {dir === 'asc' ? <ChevronUp className="w-4 h-4" aria-hidden /> : <ChevronDown className="w-4 h-4" aria-hidden />}
+                {dir === 'asc' ? 'Ascending' : 'Descending'}
               </button>
             </div>
             {pageItems.map(item => {

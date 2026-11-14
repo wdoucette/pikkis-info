@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase, type Collection } from '../lib/supabase';
 import { statusLabel } from '../guide/status';
+import { sortLabel } from '../guide/sort';
 
 /** Guide URL params that make up a saved view. */
 export const FILTER_KEYS = ['q', 'group', 'cat', 'status', 'sort', 'dir', 'size'] as const;
@@ -22,7 +23,7 @@ export function describeFilter(f: Record<string, string>): string {
   if (f.group) parts.push(`group: ${f.group.replace(/-/g, ' ')}`);
   if (f.cat) parts.push(f.cat);
   if (f.status) parts.push(statusLabel(f.status));
-  if (f.sort) parts.push(`by ${f.sort}${f.dir === 'desc' ? ' ↓' : ''}`);
+  if (f.sort) parts.push(`by ${sortLabel(f.sort)}${f.dir === 'desc' ? ' ↓' : ' ↑'}`);
   return parts.join(' · ') || 'All items';
 }
 

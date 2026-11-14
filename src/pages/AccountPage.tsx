@@ -7,7 +7,8 @@ import { applyTheme, getStoredTheme } from '../lib/theme';
 import { collectionHref, describeFilter } from '../wardrobe/useCollections';
 import type { WardrobeData } from '../types';
 
-const SORTS = ['cat', 'name', 'n', 'r', 'status', 'rd', 'rdc', 'rr', 'used', 'waiting', 'owned', 'done'];
+import { COLUMN_SORTS, sortLabel } from '../guide/sort';
+const SORTS: string[] = [...COLUMN_SORTS];
 const SIZES = [25, 50, 100, 250];
 
 const card = 'bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-3xl p-5 sm:p-6 shadow-sm';
@@ -137,7 +138,7 @@ export default function AccountPage({ wardrobe, itemCount, collections, onUpdate
             </select>
           </label>
           <label className="block"><span className={label}>Default sort</span>
-            <select className={input} value={sort} onChange={e => setSort(e.target.value)}>{SORTS.map(s => <option key={s} value={s}>{s}</option>)}</select>
+            <select className={input} value={sort} onChange={e => setSort(e.target.value)}>{SORTS.map(s => <option key={s} value={s}>{sortLabel(s)}</option>)}{!SORTS.includes(sort) && <option value={sort}>{sortLabel(sort)}</option>}</select>
           </label>
           <label className="block"><span className={label}>Direction</span>
             <select className={input} value={dir} onChange={e => setDir(e.target.value as 'asc' | 'desc')}><option value="asc">Ascending</option><option value="desc">Descending</option></select>
