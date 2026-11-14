@@ -3,6 +3,15 @@ import type { Item, WardrobeData } from '../types';
 export const STATUSES = ['Extra clothes', 'Still needed', 'Cannot decompose', 'Not owned'] as const;
 export type Status = (typeof STATUSES)[number];
 
+/** What the UI shows for a status value. The value 'Still needed' stays for URLs, filters and saved views. */
+export const STATUS_LABELS: Record<string, string> = { 'Still needed': 'Used to craft' };
+export const statusLabel = (status: string) => STATUS_LABELS[status] || status;
+/** Badge text, e.g. "Used to craft: 3 items" for a Still needed item. */
+export function statusText(status: string, waiting?: number): string {
+  if (status === 'Still needed' && waiting) return `Used to craft: ${waiting} item${waiting === 1 ? '' : 's'}`;
+  return statusLabel(status);
+}
+
 export interface DerivedInfo {
   status: Status;
   /** Unowned products (recipes + evolutions) this item is still needed for. */

@@ -1,4 +1,5 @@
 import MiniSearch from 'minisearch';
+import { findGroup, type CategoryGroup } from './groups';
 import type { Item } from '../types';
 import type { DerivedInfo } from './status';
 
@@ -103,7 +104,7 @@ export function parseQuery(q: string): ParsedQuery {
     const op = m[3];
     const val = m[4].replace(/^"|"$/g, '').replace(/_/g, ' ').trim();
     if (!val) { free.push(tok); continue; }
-    if (key === 'cat' || key === 'category' || key === 'c') { pq.cats.push(val.toLowerCase()); continue; }
+    if (key === 'cat' || key === 'category' || key === 'c' || key === 'group' || key === 'g') { pq.cats.push(val.toLowerCase()); continue; }
     if (NUM_KEYS[key]) {
       const t = parseNum(op, val);
       if (t) { pq.nums.push({ field: NUM_KEYS[key], test: t }); continue; }
@@ -157,7 +158,7 @@ export function matchStatus(want: string, status: string): boolean {
   const s = norm(status).replace(/\s/g, '');
   if (s.startsWith(w)) return true;
   if (w === 'extra' || w === 'spare') return status === 'Extra clothes';
-  if (w === 'needed' || w === 'keep' || w === 'still') return status === 'Still needed';
+  if (w === 'needed' || w === 'keep' || w === 'still' || w === 'craft' || w === 'usedtocraft' || w === 'used') return status === 'Still needed';
   if (w === 'cannot' || w === 'locked') return status === 'Cannot decompose';
   if (w === 'unowned' || w === 'notowned' || w === 'missing') return status === 'Not owned';
   return false;
@@ -168,6 +169,7 @@ export function structuredFilter(
   pq: ParsedQuery,
   infoOf: (it: Item) => DerivedInfo,
   allCats: string[],
+  groups: CategoryGroup[] = [],
 ): ((it: Item) => boolean) | null {
   const checks: ((it: Item) => boolean)[] = [];
   if (pq.cats.length) {
@@ -175,6 +177,9 @@ export function structuredFilter(
     for (const c of pq.cats) {
       const nc = norm(c);
       const exact = allCats.filter(a => norm(a) === nc);
+      // cat:accessories / group:clothing -> every category in that group
+      const grp = exact.length ? undefined : findGroup(groups, c);
+      if (grp) { grp.cats.forEach(a => wanted.add(a)); continue; }
       const pref = exact.length ? exact : allCats.filter(a => norm(a).startsWith(nc));
       const sub = pref.length ? pref : allCats.filter(a => norm(a).includes(nc));
       // allow "shoe" -> Shoes, "hairs" -> Hair

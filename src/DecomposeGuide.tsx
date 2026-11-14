@@ -3,14 +3,17 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search, Heart, CheckCircle, AlertTriangle, Info, Download, Upload, X, ChevronUp, ChevronDown,
   ChevronsUpDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, HelpCircle, Trash2,
-  Star, BookmarkPlus, FolderOpen, Cloud, CloudOff, HardDrive,
+  Star, BookmarkPlus, FolderOpen, Layers, Cloud, CloudOff, HardDrive,
 } from 'lucide-react';
 import type { Collection } from './lib/supabase';
 import type { SyncState } from './wardrobe/useWardrobe';
 import { filterStateFrom, collectionHref } from './wardrobe/useCollections';
 import { format } from 'date-fns';
+import { findGroup, groupSlug, type CategoryGroup } from './guide/groups';
+import { useGroups } from './wardrobe/CategoryGroupsContext';
+import CategoryGroupsDialog from './wardrobe/CategoryGroupsDialog';
 import type { Item, Meta, WardrobeData } from './types';
-import { deriveInfo, STATUSES, type DerivedInfo } from './guide/status';
+import { deriveInfo, STATUSES, statusLabel, statusText, type DerivedInfo } from './guide/status';
 import { buildIndex, parseQuery, structuredFilter, textSearch, type SearchIndex } from './guide/search';
 import { toCSV, downloadText } from './guide/csv';
 import { wardrobeFromCSV, describeImport } from './guide/wardrobeCsv';
@@ -21,7 +24,7 @@ export const COLUMN_HELP: Record<string, string> = {
   Cat: 'The wardrobe category, like Hair, Dress, Coat or Shoes.',
   'No.': 'The item\'s number within that category in the game\'s wardrobe.',
   Hearts: 'The rarity, from 1 to 6 hearts.',
-  Status: 'Worked out from what you own. It checks four things in order and shows the first that applies:\nCannot decompose: the game won\'t let you break it down.\nNot owned: you don\'t have it.\nStill needed: you own it, but at least one item it crafts or evolves into isn\'t owned yet, so keep it.\nExtra clothes: you own it and everything it feeds into, so it\'s safe to decompose.',
+  Status: 'Worked out from what you own. It checks four things in order and shows the first that applies:\nCannot decompose: the game won\'t let you break it down.\nNot owned: you don\'t have it.\nUsed to craft: X items: you own it, but X items it crafts or evolves into aren\'t owned yet, so keep it.\nExtra clothes: you own it and everything it feeds into, so it\'s safe to decompose.',
   'Req.': 'How many copies you need for direct uses: recipes that use this item, plus evolving it into something else.',
   '+Dyes': 'The same count plus recolours, because each recolour uses up one copy of the base item.',
   Tree: 'How many copies the whole crafting chain needs, counting the items made from it and the items made from those, all the way down.',
@@ -50,10 +53,10 @@ export const StatusBadge = ({ status, waiting }: { status: string; waiting?: num
     'Cannot decompose': 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
     'Not owned': 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
   };
-  const title = status === 'Still needed' && waiting ? `Waiting on ${waiting} unowned item${waiting === 1 ? '' : 's'}` : undefined;
+  const title = status === 'Still needed' && waiting ? `Keep it: ${waiting} item${waiting === 1 ? '' : 's'} it crafts or evolves into ${waiting === 1 ? 'is' : 'are'} not owned yet` : undefined;
   return (
     <span title={title} className={`inline-block whitespace-nowrap px-2.5 py-0.5 text-xs font-medium rounded-full ${colors[status] || 'bg-zinc-100 text-zinc-500'}`}>
-      {status}{status === 'Still needed' && waiting ? ` · ${waiting}` : ''}
+      {statusText(status, waiting)}
     </span>
   );
 };
@@ -109,6 +112,10 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   const urlQ = params.get('q') || '';
   const cat = params.get('cat') || 'All';
   const statusFilter = params.get('status') || 'All';
+  const groupParam = params.get('group') || '';
+  const { groups } = useGroups();
+  const activeGroup = useMemo(() => (groupParam ? findGroup(groups, groupParam) : undefined), [groups, groupParam]);
+  const [groupsOpen, setGroupsOpen] = useState(false);
   const hasQuery = urlQ.trim() !== '';
   const rawSort = params.get('sort') as SortKey | null;
   const sort: SortKey = rawSort && SORT_KEYS.includes(rawSort) && (rawSort !== 'relevance' || hasQuery)
@@ -187,12 +194,19 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
     : items.filter(i => !i.hidden)), [items, mine, wardrobe]);
   const byId = useMemo(() => new Map(items.map(i => [i.id, i])), [items]);
 
+  const allCatNames = useMemo(() => Array.from(new Set(items.map(i => i.cat))).sort((a, b) => a.localeCompare(b)), [items]);
+  // The group picker narrows everything below it to that group's categories.
+  const scopedItems = useMemo(() => {
+    if (!activeGroup) return visibleItems;
+    const set = new Set(activeGroup.cats);
+    return visibleItems.filter(i => set.has(i.cat));
+  }, [visibleItems, activeGroup]);
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const i of visibleItems) counts.set(i.cat, (counts.get(i.cat) || 0) + 1);
+    for (const i of scopedItems) counts.set(i.cat, (counts.get(i.cat) || 0) + 1);
     return Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [visibleItems]);
-  const catNames = useMemo(() => categories.map(c => c[0]), [categories]);
+  }, [scopedItems]);
+  const catNames = allCatNames;
 
   // Derived status per item (recomputed when the wardrobe changes).
   const infoMap = useMemo(() => {
@@ -231,8 +245,8 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   );
 
   const filtered = useMemo(() => {
-    const sf = structuredFilter(parsed, infoOf, catNames);
-    return visibleItems.filter(it => {
+    const sf = structuredFilter(parsed, infoOf, catNames, groups);
+    return scopedItems.filter(it => {
       if (cat !== 'All' && it.cat !== cat) return false;
       if (statusFilter !== 'All') {
         const inf = infoOf(it);
@@ -245,7 +259,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
       if (sf && !sf(it)) return false;
       return true;
     });
-  }, [visibleItems, cat, statusFilter, scores, parsed, infoOf, catNames, wardrobe]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scopedItems, cat, statusFilter, scores, parsed, infoOf, catNames, groups, wardrobe]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sorted = useMemo(() => {
     const val = (it: Item): number | string => {
@@ -293,7 +307,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
     update({ page: String(Math.min(Math.max(1, p), pages)) }, true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-  const anyFilter = hasQuery || cat !== 'All' || statusFilter !== 'All' || params.has('sort');
+  const anyFilter = hasQuery || !!groupParam || cat !== 'All' || statusFilter !== 'All' || params.has('sort');
   const clearFilters = () => {
     setQInput('');
     setParams(prev => {
@@ -306,7 +320,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
 
   const statusCounts = useMemo(() => {
     const c: Record<string, number> = { All: 0, 'Left to do': 0, Owned: 0, Wanted: 0 };
-    for (const it of visibleItems) {
+    for (const it of scopedItems) {
       if (cat !== 'All' && it.cat !== cat) continue;
       const inf = infoOf(it);
       c.All++;
@@ -316,7 +330,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
       else if (wardrobe[it.id]?.wanted) c.Wanted++;
     }
     return c;
-  }, [visibleItems, cat, infoOf, wardrobe]);
+  }, [scopedItems, cat, infoOf, wardrobe]);
 
   // Whole-wardrobe progress (all categories).
   const progress = useMemo(() => {
@@ -339,7 +353,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   };
   const [saving, setSaving] = useState(false);
   const saveView = async () => {
-    const suggested = [urlQ && `“${urlQ}”`, cat !== 'All' && cat, statusFilter !== 'All' && statusFilter].filter(Boolean).join(' · ') || 'My view';
+    const suggested = [urlQ && `“${urlQ}”`, activeGroup?.name, cat !== 'All' && cat, statusFilter !== 'All' && statusLabel(statusFilter)].filter(Boolean).join(' · ') || 'My view';
     const name = window.prompt('Name this collection', suggested);
     if (!name?.trim() || !onSaveView) return;
     setSaving(true);
@@ -356,7 +370,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
     for (const item of mine ? visibleItems : items) {
       const inf = deriveInfo(item, wardrobe);
       const wanted = !(inf.owned > 0) && !!wardrobe[item.id]?.wanted;
-      rows.push([item.name, item.cat, item.n, inf.owned, wanted ? 'Yes' : 'No', inf.done ? 'Yes' : 'No', inf.status, inf.waiting, item.rd, item.rdc ?? item.rd]);
+      rows.push([item.name, item.cat, item.n, inf.owned, wanted ? 'Yes' : 'No', inf.done ? 'Yes' : 'No', statusLabel(inf.status), inf.waiting, item.rd, item.rdc ?? item.rd]);
     }
     downloadText(mine ? 'my-pikki-wardrobe.csv' : 'pikkis-wardrobe.csv', toCSV(rows));
   };
@@ -520,7 +534,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
             <span className="sr-only">Status filter</span>
             <select value={statusFilter} onChange={e => update({ status: e.target.value })}
               className="w-full lg:w-60 h-[46px] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl px-4 text-sm focus:outline-none focus:border-amber-400">
-              {FILTER_STATUSES.map(s => <option key={s} value={s}>{s}{loading ? '' : statusCounts[s] !== undefined ? ` (${statusCounts[s].toLocaleString()})` : ' (0)'}</option>)}
+              {FILTER_STATUSES.map(s => <option key={s} value={s}>{statusLabel(s)}{loading ? '' : statusCounts[s] !== undefined ? ` (${statusCounts[s].toLocaleString()})` : ' (0)'}</option>)}
             </select>
           </label>
           <div className="flex gap-2 flex-wrap">
@@ -562,6 +576,24 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
             <span><b className="text-violet-700 dark:text-violet-300">{progress.wanted.toLocaleString()}</b> wanted</span>
             <span className="hidden sm:inline"><b>{progress.done.toLocaleString()}</b> done</span>
           </div>
+          <label className="relative">
+            <span className="sr-only">Category group</span>
+            <Layers className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" aria-hidden />
+            <select value={activeGroup ? groupSlug(activeGroup) : ''} title="Show only the categories in a group"
+              onChange={e => { const v = e.target.value; if (v === '__manage') { setGroupsOpen(true); return; } update({ group: v || null, cat: null }); }}
+              className={`h-9 w-[170px] pl-8 pr-2 rounded-xl border text-xs font-semibold bg-white dark:bg-zinc-900 ${activeGroup ? 'border-amber-400 text-amber-700 dark:text-amber-300' : 'border-zinc-200 dark:border-zinc-700'}`}>
+              <option value="">All categories</option>
+              <optgroup label="Built-in groups">
+                {groups.filter(g => g.builtin).map(g => <option key={g.id} value={groupSlug(g)}>{g.name} ({g.cats.length})</option>)}
+              </optgroup>
+              {groups.some(g => !g.builtin) && (
+                <optgroup label="My groups">
+                  {groups.filter(g => !g.builtin).map(g => <option key={g.id} value={groupSlug(g)}>{g.name} ({g.cats.length})</option>)}
+                </optgroup>
+              )}
+              <option value="__manage">Manage groups…</option>
+            </select>
+          </label>
           <button type="button" onClick={saveView} disabled={saving}
             className="h-9 px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:border-amber-400 text-xs font-semibold inline-flex items-center gap-1.5 disabled:opacity-60"
             title={signedIn ? 'Save the current search and filters as a collection' : 'Save the current search and filters in this browser'}>
@@ -583,11 +615,12 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
             <div>Typos and partial words are OK: <code>sandal blak</code>, <code>frost</code></div>
             <div>Find what uses an ingredient: <code>gourd bell</code> matches items used to craft it</div>
             <div>Category: <code>cat:shoes</code>, <code>cat:"hair ornament"</code></div>
+            <div>Group: <code>cat:accessories</code>, <code>group:clothing</code>, or your own groups (<button type="button" className="underline hover:text-amber-700" onClick={() => setGroupsOpen(true)}>manage</button>)</div>
             <div>Hearts: <code>hearts:5</code>, <code>r:&gt;=4</code>, <code>r:3-5</code></div>
             <div>Wardrobe No.: <code>#19</code>, <code>n:19</code>, <code>n:1-50</code></div>
             <div>Counts: <code>rd:&gt;10</code>, <code>rr:0</code>, <code>rdc:5-20</code>, <code>used:0</code>, <code>dyes:&gt;2</code></div>
             <div>Flags: <code>is:edited</code>, <code>has:comment</code>, <code>is:evolvable</code>, <code>is:customizable</code>, <code>is:future</code> (prefix <code>-</code> to negate)</div>
-            <div>Wardrobe: <code>owned:yes</code>, <code>done:no</code>, <code>status:needed</code>, <code>is:waiting</code></div>
+            <div>Wardrobe: <code>owned:yes</code>, <code>done:no</code>, <code>status:craft</code>, <code>is:waiting</code></div>
             <dl className="sm:col-span-2 mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700 grid sm:grid-cols-2 gap-x-6 gap-y-1.5">
               <dt className="sm:col-span-2 font-semibold text-zinc-700 dark:text-zinc-200">What the columns mean</dt>
               {Object.entries(COLUMN_HELP).map(([k, v]) => (
@@ -600,7 +633,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
         {/* Category tabs */}
         <div role="tablist" aria-label="Category" className="flex gap-1.5 h-10 items-center overflow-x-auto overflow-y-hidden pb-1 -mx-1 px-1 [scrollbar-width:thin] cat-scroller">
           {loading && Array.from({ length: 12 }).map((_, i) => <span key={i} className="shrink-0 h-[30px] w-24 rounded-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" aria-hidden />)}
-          {!loading && [['All', visibleItems.length] as [string, number], ...categories].map(([c, count]) => (
+          {!loading && [['All', scopedItems.length] as [string, number], ...categories].map(([c, count]) => (
             <button key={c} type="button" role="tab" aria-selected={cat === c} onClick={() => update({ cat: c })}
               className={`shrink-0 h-[30px] px-3 text-xs rounded-full font-semibold border transition-colors whitespace-nowrap ${cat === c
                 ? 'bg-amber-600 border-amber-600 text-white shadow-sm'
@@ -610,6 +643,9 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
           ))}
         </div>
       </div>
+
+      <CategoryGroupsDialog open={groupsOpen} onClose={() => setGroupsOpen(false)} allCats={allCatNames} signedIn={signedIn}
+        onUse={(g: CategoryGroup) => update({ group: groupSlug(g), cat: null })} />
 
       {notice && (
         <div role="status" className="mb-4 flex items-center justify-between gap-3 bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-2xl px-4 py-2 text-sm">

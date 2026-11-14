@@ -17,6 +17,7 @@ import ContactPage from './pages/ContactPage';
 import AboutPage from './pages/AboutPage';
 import { useWardrobe } from './wardrobe/useWardrobe';
 import { useCollections } from './wardrobe/useCollections';
+import { CategoryGroupsProvider } from './wardrobe/CategoryGroupsContext';
 import { deriveInfo } from './guide/status';
 
 const PikkiMonogram = () => (
@@ -344,6 +345,7 @@ function AppShell() {
         )}
 
         <main className="flex-1 min-h-[calc(100vh-64px)]">
+          <CategoryGroupsProvider userId={user?.id ?? null} ready={ready}>
           <Routes>
             <Route path="/" element={
               <DecomposeGuide 
@@ -384,6 +386,7 @@ function AppShell() {
               </div>
             } />
           </Routes>
+          </CategoryGroupsProvider>
         </main>
 
         <footer className="bg-zinc-900 text-zinc-300 py-10 border-t border-zinc-800 mt-20">
