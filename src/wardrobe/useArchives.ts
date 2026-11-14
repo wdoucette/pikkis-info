@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import type { WardrobeData } from '../types';
 import { isEmptyEntry } from './useWardrobe';
+import { clampOwned } from './OwnedInput';
 
 export interface ArchiveMeta { id: string; name: string; item_count: number; created_at: string }
 interface LocalArchive extends ArchiveMeta { data: WardrobeData }
@@ -23,10 +24,13 @@ export function compact(w: WardrobeData): WardrobeData {
   const out: WardrobeData = {};
   for (const [id, e] of Object.entries(w)) {
     if (isEmptyEntry(e)) continue;
-    out[id] = { owned: e.owned || 0, done: !!e.done, ...(e.wanted && !(e.owned > 0) ? { wanted: true } : {}) };
+    out[id] = { owned: clampOwned(e.owned), done: !!e.done, ...(e.wanted && !(e.owned > 0) ? { wanted: true } : {}) };
   }
   return out;
 }
+
+/** Clean a stored snapshot before it becomes the wardrobe. */
+const sanitize = (w: WardrobeData) => compact(w);
 
 /** Wardrobe snapshots: Supabase (owner-only RLS) when signed in, this browser otherwise. */
 export function useArchives(user: User | null) {
@@ -65,11 +69,11 @@ export function useArchives(user: User | null) {
     if (!uid) {
       const a = readLocal().find(x => x.id === id);
       if (!a) throw new Error('Archive not found.');
-      return a.data;
+      return sanitize(a.data);
     }
     const { data, error } = await supabase.from('wardrobe_archives').select('data').eq('id', id).single();
     if (error) throw error;
-    return (data?.data || {}) as WardrobeData;
+    return sanitize((data?.data || {}) as WardrobeData);
   }, [uid]);
 
   const remove = useCallback(async (id: string) => {

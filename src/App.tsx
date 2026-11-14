@@ -18,6 +18,7 @@ import AboutPage from './pages/AboutPage';
 import { useWardrobe } from './wardrobe/useWardrobe';
 import { useCollections } from './wardrobe/useCollections';
 import { CategoryGroupsProvider } from './wardrobe/CategoryGroupsContext';
+import OwnedInput, { clampOwned } from './wardrobe/OwnedInput';
 import { deriveInfo } from './guide/status';
 
 const PikkiMonogram = () => (
@@ -74,6 +75,7 @@ function ItemPage({ items, wardrobe, setWardrobe, loading }: { items: Item[]; wa
   const wanted = !(info.owned > 0) && !!wardrobe[item.id]?.wanted;
   const setEntry = (patch: Partial<{ owned: number; done: boolean; wanted: boolean }>) => {
     const next = { ...(wardrobe[item.id] ?? { owned: 0, done: false }), ...patch };
+    next.owned = clampOwned(next.owned);
     if (next.owned > 0) delete next.wanted;
     setWardrobe({ ...wardrobe, [item.id]: next });
   };
@@ -108,11 +110,11 @@ function ItemPage({ items, wardrobe, setWardrobe, loading }: { items: Item[]; wa
             )}
             {item.hidden && <div className="mt-2 text-xs text-zinc-500">This item is hidden from the guide list.</div>}
           </div>
-          <div className="grid grid-cols-3 sm:flex gap-2 sm:gap-3 w-full sm:w-auto">
-            <button type="button" onClick={() => setEntry({ owned: info.owned > 0 ? 0 : 1 })} aria-pressed={info.owned > 0}
-              className={`w-full sm:w-[118px] px-2 sm:px-4 py-2 whitespace-nowrap border rounded-2xl text-[13px] sm:text-sm inline-flex items-center justify-center gap-2 tabular-nums ${info.owned > 0 ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950' : 'border-zinc-300 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}>
-              Owned: <span className="font-mono font-bold">{info.owned}</span>
-            </button>
+          <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+            <div className="col-span-2 sm:col-span-1 flex items-center justify-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
+              <span>Owned</span>
+              <OwnedInput size="lg" value={info.owned} label={item.name} onCommit={n => setEntry({ owned: n })} />
+            </div>
             <button type="button" onClick={() => setEntry({ wanted: !wanted })} aria-pressed={wanted} disabled={info.owned > 0}
               title={info.owned > 0 ? 'Already owned' : 'Add to wishlist'}
               className={`w-full sm:w-[118px] px-2 sm:px-4 py-2 whitespace-nowrap border rounded-2xl text-[13px] sm:text-sm font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-40 ${wanted ? 'bg-violet-100 border-violet-300 text-violet-800 dark:bg-violet-950 dark:text-violet-200 dark:border-violet-700' : 'border-zinc-300 dark:border-zinc-600 enabled:hover:bg-zinc-50 dark:enabled:hover:bg-zinc-800'}`}>

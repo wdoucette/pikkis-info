@@ -11,6 +11,7 @@ import { filterStateFrom, collectionHref } from './wardrobe/useCollections';
 import { format } from 'date-fns';
 import { findGroup, groupSlug, type CategoryGroup } from './guide/groups';
 import { useGroups } from './wardrobe/CategoryGroupsContext';
+import OwnedInput, { clampOwned } from './wardrobe/OwnedInput';
 import CategoryGroupsDialog from './wardrobe/CategoryGroupsDialog';
 import type { Item, Meta, WardrobeData } from './types';
 import { deriveInfo, STATUSES, statusLabel, statusText, type DerivedInfo } from './guide/status';
@@ -29,7 +30,7 @@ export const COLUMN_HELP: Record<string, string> = {
   '+Dyes': 'The same count plus recolours, because each recolour uses up one copy of the base item.',
   Tree: 'How many copies the whole crafting chain needs, counting the items made from it and the items made from those, all the way down.',
   Used: 'How many different items this one is used to craft or evolve into. Hover over the number to list them.',
-  Owned: 'Your toggle for whether you have the item.',
+  Owned: 'How many you own (0 to 9999). Type a number or use − and +.',
   Want: 'Adds it to your wishlist. It only matters while you don\'t own the item.',
   Done: 'Your own checkmark for an item you\'ve finished with, such as already decomposed or all its crafting done.',
 };
@@ -342,10 +343,11 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
     return { owned, wanted, done };
   }, [wardrobe]);
 
-  const toggleOwned = (itemId: number, currentOwned: number) => {
-    const { wanted: _w, ...rest } = wardrobe[itemId] ?? { owned: 0, done: false };
-    void _w;
-    setWardrobe({ ...wardrobe, [itemId]: { ...rest, owned: currentOwned > 0 ? 0 : 1 } });
+  const setOwned = (itemId: number, n: number) => {
+    const cur = wardrobe[itemId] ?? { owned: 0, done: false };
+    const owned = clampOwned(n);
+    const next = { owned, done: !!cur.done, ...(owned === 0 && cur.wanted ? { wanted: true } : {}) };
+    setWardrobe({ ...wardrobe, [itemId]: next });
   };
   const toggleWanted = (itemId: number) => {
     const cur = wardrobe[itemId] ?? { owned: 0, done: false };
@@ -442,15 +444,6 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
     </nav>
   );
 
-  const OwnedBtn = ({ item, inf }: { item: Item; inf: DerivedInfo }) => (
-    <button type="button" onClick={() => toggleOwned(item.id, inf.owned)} aria-pressed={inf.owned > 0}
-      aria-label={`${item.name}: owned ${inf.owned}. Toggle owned`} title="Toggle owned"
-      className={`w-9 h-7 shrink-0 rounded-lg flex items-center justify-center text-xs font-mono tabular-nums border transition-colors ${inf.owned > 0
-        ? 'bg-emerald-100 border-emerald-300 text-emerald-700 dark:bg-emerald-900 dark:border-emerald-700 dark:text-emerald-200'
-        : 'bg-zinc-100 border-zinc-300 hover:bg-zinc-200 dark:bg-zinc-800 dark:border-zinc-600'}`}>
-      {inf.owned}
-    </button>
-  );
   const DoneBtn = ({ item, inf }: { item: Item; inf: DerivedInfo }) => (
     <button type="button" onClick={() => toggleDone(item.id, inf.done)} aria-pressed={inf.done}
       aria-label={`${item.name}: ${inf.done ? 'done' : 'not done'}. Toggle done`} title="Toggle done"
@@ -729,7 +722,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
                       <td className="px-3 py-3 tabular-nums text-zinc-500"><Num item={item} field="rdc" value={item.rdc ?? item.rd} /></td>
                       <td className="px-3 py-3 tabular-nums text-zinc-500"><Num item={item} field="rr" value={item.rr} /></td>
                       <td className="px-3 py-3 tabular-nums text-zinc-500" title={(item.u || []).slice(0, 12).map(u => `${u.name || u.id} ×${u.q}`).join('\n') || undefined}>{item.u?.length || 0}</td>
-                      <td className="px-3 py-3"><OwnedBtn item={item} inf={inf} /></td>
+                      <td className="px-3 py-2"><OwnedInput value={inf.owned} label={item.name} onCommit={n => setOwned(item.id, n)} /></td>
                       <td className="px-2 py-3"><WantedBtn item={item} inf={inf} /></td>
                       <td className="pl-3 pr-5 py-3"><DoneBtn item={item} inf={inf} /></td>
                     </tr>
@@ -757,7 +750,11 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
                 <div key={item.id} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-3">
                   <div className="flex justify-between gap-2">
                     <NameCell item={item} />
-                    <div className="flex items-start gap-1.5 shrink-0"><OwnedBtn item={item} inf={inf} /><WantedBtn item={item} inf={inf} /><DoneBtn item={item} inf={inf} /></div>
+                    <div className="flex items-start gap-1.5 shrink-0"><WantedBtn item={item} inf={inf} /><DoneBtn item={item} inf={inf} /></div>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2 text-xs text-zinc-500">
+                    <span>Owned</span>
+                    <OwnedInput size="md" value={inf.owned} label={item.name} onCommit={n => setOwned(item.id, n)} />
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
                     <span>{item.cat} <span className="font-mono">#{item.n}</span></span>

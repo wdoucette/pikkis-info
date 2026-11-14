@@ -45,7 +45,7 @@ export function wardrobeFromCSV(text: string, items: Item[], base: WardrobeData)
     }
     if (!it) { unmatched++; continue; }
     const ov = iOwned >= 0 ? (r[iOwned] || '').trim() : '';
-    const owned = /^\d+$/.test(ov) ? parseInt(ov, 10) : /^(y|yes|true|x|✓|✔)$/i.test(ov) ? 1 : 0;
+    const owned = /^\d+$/.test(ov) ? Math.min(9999, parseInt(ov, 10)) : /^(y|yes|true|x|✓|✔)$/i.test(ov) ? 1 : 0;
     const done = iDone >= 0 ? YES.test((r[iDone] || '').trim()) : !!next[it.id]?.done;
     const wantedIn = iWanted >= 0 ? YES.test((r[iWanted] || '').trim()) : !!next[it.id]?.wanted;
     if (!owned && !done && !wantedIn) { delete next[it.id]; matched++; continue; }
