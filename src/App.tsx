@@ -393,7 +393,7 @@ function AppShell() {
               <Link to="/my-wardrobe" className="hover:text-amber-200">My Wardrobe</Link>
               <Link to="/about" className="hover:text-amber-200">About</Link>
               <Link to="/contact" className="hover:text-amber-200">Contact</Link>
-              <a href="https://github.com/wdoucette/pikkis-info" target="_blank" rel="noreferrer" className="hover:text-amber-200">GitHub</a>
+              <a href="https://github.com/creamlace" target="_blank" rel="noreferrer" className="hover:text-amber-200">GitHub</a>
             </nav>
             <p>Unofficial, non-commercial fan site for <span className="text-amber-200">Love Nikki: Dress Up Queen</span>. Love Nikki and its characters, items and art belong to Elex / Papergames. Not affiliated or endorsed.</p>
             <p className="mt-2">Item data from <span className="text-amber-200">Nikki Calc</span> and the community · corrections reviewed by hand · refreshed weekly.</p>
