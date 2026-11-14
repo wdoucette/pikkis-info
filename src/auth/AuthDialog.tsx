@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useOAuthProviders, OAUTH_LABELS, type OAuthProvider } from './oauth';
 import { Link } from 'react-router-dom';
 import { X, KeyRound, UserPlus } from 'lucide-react';
-import { supabase, friendlyError, USERNAME_RE } from '../lib/supabase';
+import { supabase, friendlyError, USERNAME_RE, SUPABASE_URL, SUPABASE_KEY } from '../lib/supabase';
 import { useAuth, type AuthMode } from './AuthProvider';
 
 export default function AuthDialog() {
@@ -14,6 +15,7 @@ export default function AuthDialog() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const firstRef = useRef<HTMLInputElement>(null);
+  const providers = useOAuthProviders(authOpen);
 
   useEffect(() => {
     if (authOpen) { setMode(authMode); setError(null); setInfo(null); setTimeout(() => firstRef.current?.focus(), 30); }
@@ -27,13 +29,33 @@ export default function AuthDialog() {
 
   if (!authOpen) return null;
 
+  const oauth = async (p: OAuthProvider) => {
+    setBusy(true); setError(null); setInfo(null);
+    const { error } = await supabase.auth.signInWithOAuth({ provider: p, options: { redirectTo: window.location.origin } });
+    if (error) { setError(friendlyError(error)); setBusy(false); }
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true); setError(null); setInfo(null);
     try {
       if (mode === 'signin') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        const id = email.trim();
+        if (id.includes('@')) {
+          const { error } = await supabase.auth.signInWithPassword({ email: id, password });
+          if (error) throw error;
+        } else {
+          // Username: the "login" Edge Function looks up the email server-side and signs in.
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+            body: JSON.stringify({ username: id.toLowerCase(), password }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok || !body.access_token) throw new Error(body.error || 'Wrong username or password.');
+          const { error } = await supabase.auth.setSession({ access_token: body.access_token, refresh_token: body.refresh_token });
+          if (error) throw error;
+        }
       } else if (mode === 'signup') {
         const u = username.trim().toLowerCase();
         if (u && !USERNAME_RE.test(u)) throw new Error('Username: 3–24 characters, lowercase letters, numbers and _ only.');
@@ -75,10 +97,23 @@ export default function AuthDialog() {
             </button>
           ))}
         </div>
+        {providers.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {providers.map(p => (
+              <button key={p} type="button" disabled={busy} onClick={() => oauth(p)}
+                className="w-full h-11 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-sm font-semibold disabled:opacity-60">
+                Continue with {OAUTH_LABELS[p]}
+              </button>
+            ))}
+            <div className="flex items-center gap-3 text-xs text-zinc-500 pt-1"><span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" />or use a password<span className="h-px flex-1 bg-zinc-200 dark:bg-zinc-700" /></div>
+          </div>
+        )}
         <form onSubmit={submit} className="space-y-3">
           <label className="block text-sm">
-            <span className="block mb-1 text-zinc-600 dark:text-zinc-300">Email</span>
-            <input ref={firstRef} className={input} type="email" required autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} />
+            <span className="block mb-1 text-zinc-600 dark:text-zinc-300">{mode === 'signin' ? 'Email or username' : 'Email'}</span>
+            <input ref={firstRef} className={input} type={mode === 'signin' ? 'text' : 'email'} required
+              autoComplete={mode === 'signin' ? 'username' : 'email'} autoCapitalize="none" autoCorrect="off" spellCheck={false}
+              value={email} onChange={e => setEmail(e.target.value)} />
           </label>
           {(
             <label className="block text-sm">
@@ -105,7 +140,7 @@ export default function AuthDialog() {
           <p className="text-center text-xs text-zinc-500 min-h-4">
             {mode === 'signin'
               ? <>Forgot your password? Send us a message via <Link to="/contact?topic=other" onClick={closeAuth} className="underline hover:text-amber-700 dark:hover:text-amber-300">Contact</Link> and we'll help.</>
-              : 'Your email is only used as your login. We never send you email.'}
+              : 'Your email is only used as your login. We never send you email. You can sign in with your username too.'}
           </p>
         </form>
         <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">Your wardrobe is saved to your account so it follows you between devices. Profiles are private unless you make them public.</p>

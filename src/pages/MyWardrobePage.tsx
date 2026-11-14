@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthProvider';
 import type { Collection } from '../lib/supabase';
 import type { SyncState } from '../wardrobe/useWardrobe';
 import { collectionHref, describeFilter } from '../wardrobe/useCollections';
+import ArchivesPanel from '../wardrobe/ArchivesPanel';
 import type { Item, Meta, WardrobeData } from '../types';
 
 const TABS = [
@@ -28,7 +29,7 @@ export default function MyWardrobePage(props: {
   onSaveView: (name: string, f: Record<string, string>) => Promise<unknown>;
   onDeleteView: (id: string) => Promise<void>;
 }) {
-  const { items, wardrobe, loading, collections, onDeleteView } = props;
+  const { items, wardrobe, setWardrobe, loading, collections, onDeleteView } = props;
   const { ready, user, profile, openAuth } = useAuth();
   const [params, setParams] = useSearchParams();
   const tab = params.get('status') || '';
@@ -143,6 +144,8 @@ export default function MyWardrobePage(props: {
             ))}
           </div>
         </div>
+
+        <ArchivesPanel user={user} items={items} wardrobe={wardrobe} setWardrobe={setWardrobe} />
 
         {/* Tabs */}
         <div role="tablist" aria-label="Wardrobe section" className="inline-grid grid-cols-3 gap-1 p-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl w-full sm:w-auto">

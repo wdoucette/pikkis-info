@@ -12,7 +12,24 @@ import { format } from 'date-fns';
 import type { Item, Meta, WardrobeData } from './types';
 import { deriveInfo, STATUSES, type DerivedInfo } from './guide/status';
 import { buildIndex, parseQuery, structuredFilter, textSearch, type SearchIndex } from './guide/search';
-import { parseCSV, toCSV, downloadText } from './guide/csv';
+import { toCSV, downloadText } from './guide/csv';
+import { wardrobeFromCSV, describeImport } from './guide/wardrobeCsv';
+
+/** Column definitions shown as header tooltips and in the search help panel. */
+export const COLUMN_HELP: Record<string, string> = {
+  Item: 'The clothing item\'s name. A small "edited" tag means Pikki corrected Nikki Calc\'s data, and "fut" means some future recipes may be missing.',
+  Cat: 'The wardrobe category, like Hair, Dress, Coat or Shoes.',
+  'No.': 'The item\'s number within that category in the game\'s wardrobe.',
+  Hearts: 'The rarity, from 1 to 6 hearts.',
+  Status: 'Worked out from what you own. It checks four things in order and shows the first that applies:\nCannot decompose: the game won\'t let you break it down.\nNot owned: you don\'t have it.\nStill needed: you own it, but at least one item it crafts or evolves into isn\'t owned yet, so keep it.\nExtra clothes: you own it and everything it feeds into, so it\'s safe to decompose.',
+  'Req.': 'How many copies you need for direct uses: recipes that use this item, plus evolving it into something else.',
+  '+Dyes': 'The same count plus recolours, because each recolour uses up one copy of the base item.',
+  Tree: 'How many copies the whole crafting chain needs, counting the items made from it and the items made from those, all the way down.',
+  Used: 'How many different items this one is used to craft or evolve into. Hover over the number to list them.',
+  Owned: 'Your toggle for whether you have the item.',
+  Want: 'Adds it to your wishlist. It only matters while you don\'t own the item.',
+  Done: 'Your own checkmark for an item you\'ve finished with, such as already decomposed or all its crafting done.',
+};
 
 export const itemPath = (item: Item) => `/wardrobe/${encodeURIComponent(item.cat.toLowerCase())}/${item.n}`;
 
@@ -345,42 +362,10 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
   };
 
   const importCSV = async (file: File) => {
-    const rows = parseCSV(await file.text());
-    if (rows.length < 2) { setNotice('Import: the file has no data rows.'); return; }
-    const header = rows[0].map(h => h.trim().toLowerCase());
-    const col = (...names: string[]) => header.findIndex(h => names.includes(h));
-    const iItem = col('item', 'name'), iCat = col('category', 'cat'), iNo = col('no.', 'no', 'n', 'number');
-    const iOwned = col('owned', 'own'), iDone = col('done'), iWanted = col('wanted', 'want', 'wishlist');
-    if (iItem < 0 && (iCat < 0 || iNo < 0)) { setNotice('Import: need an Item column, or Category + No. columns.'); return; }
-    const byCatNo = new Map<string, Item>();
-    const byName = new Map<string, Item[]>();
-    for (const it of items) {
-      byCatNo.set(`${it.cat.toLowerCase()}|${it.n}`, it);
-      const k = it.name.toLowerCase();
-      byName.set(k, [...(byName.get(k) || []), it]);
-    }
-    const next: WardrobeData = { ...wardrobe };
-    let matched = 0, unmatched = 0, ambiguous = 0;
-    for (const r of rows.slice(1)) {
-      let it: Item | undefined;
-      const c = iCat >= 0 ? r[iCat]?.trim().toLowerCase() : '';
-      const n = iNo >= 0 ? parseInt(r[iNo] || '', 10) : NaN;
-      if (c && !Number.isNaN(n)) it = byCatNo.get(`${c}|${n}`);
-      if (!it && iItem >= 0) {
-        const cands = byName.get((r[iItem] || '').trim().toLowerCase()) || [];
-        if (cands.length === 1) it = cands[0];
-        else if (cands.length > 1) { ambiguous++; continue; }
-      }
-      if (!it) { unmatched++; continue; }
-      const ov = iOwned >= 0 ? (r[iOwned] || '').trim() : '';
-      const owned = /^\d+$/.test(ov) ? parseInt(ov, 10) : /^(y|yes|true|x|✓|✔)$/i.test(ov) ? 1 : 0;
-      const done = iDone >= 0 ? /^(y|yes|true|1|x|✓|✔)$/i.test((r[iDone] || '').trim()) : !!next[it.id]?.done;
-      const wantedIn = iWanted >= 0 ? /^(y|yes|true|1|x|✓|✔)$/i.test((r[iWanted] || '').trim()) : !!next[it.id]?.wanted;
-      next[it.id] = { owned, done, ...(owned === 0 && wantedIn ? { wanted: true } : {}) };
-      matched++;
-    }
-    setWardrobe(next);
-    setNotice(`Imported ${matched} rows${unmatched ? `, ${unmatched} not found` : ''}${ambiguous ? `, ${ambiguous} skipped (ambiguous name — add Category and No.)` : ''}.`);
+    const r = wardrobeFromCSV(await file.text(), items, wardrobe);
+    if (r.error) { setNotice(`Import: ${r.error}`); return; }
+    setWardrobe(r.next);
+    setNotice(`Imported ${describeImport(r)}.`);
   };
 
   const clearWardrobe = () => {
@@ -391,13 +376,13 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
     }
   };
 
-  const SortHeader = ({ k, label, className = '', title }: { k: SortKey; label: string; className?: string; title?: string }) => {
+  const SortHeader = ({ k, label, className = '', title = COLUMN_HELP[label] }: { k: SortKey; label: string; className?: string; title?: string }) => {
     const active = sort === k;
     const Icon = !active ? ChevronsUpDown : dir === 'asc' ? ChevronUp : ChevronDown;
     return (
       <th scope="col" className={`px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide ${active ? 'text-amber-700 dark:text-amber-400' : 'text-zinc-500'} ${className}`}
         aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-        <button type="button" onClick={() => setSort(k)} title={title ? `${title} — click to sort` : 'Click to sort'}
+        <button type="button" onClick={() => setSort(k)} title={title ? `${title}\n\n(Click to sort)` : 'Click to sort'}
           className="inline-flex items-center gap-1 hover:text-amber-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 rounded">
           {label}<Icon className={`w-3.5 h-3.5 ${active ? '' : 'opacity-40'}`} aria-hidden />
         </button>
@@ -539,11 +524,11 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
             </select>
           </label>
           <div className="flex gap-2 flex-wrap">
-            <button type="button" onClick={exportCSV} title="Export Owned/Done as CSV"
+            <button type="button" onClick={exportCSV} title="Export Owned, Wanted and Done as CSV"
               className="p-btn bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 hover:border-amber-300 text-zinc-700 dark:text-zinc-300 text-sm">
               <Download className="w-4 h-4" aria-hidden /> Export
             </button>
-            <button type="button" onClick={() => fileRef.current?.click()} title="Import CSV with Item, Category, No., Owned, Done"
+            <button type="button" onClick={() => fileRef.current?.click()} title="Import (merge) a CSV with Item, Category, No., Owned, Wanted, Done"
               className="p-btn bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 hover:border-amber-300 text-zinc-700 dark:text-zinc-300 text-sm">
               <Upload className="w-4 h-4" aria-hidden /> Import
             </button>
@@ -558,7 +543,7 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
 
         <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
           <button type="button" onClick={() => setShowHelp(s => !s)} aria-expanded={showHelp} className="inline-flex items-center gap-1 hover:text-amber-600">
-            <HelpCircle className="w-3.5 h-3.5" aria-hidden /> Search tips
+            <HelpCircle className="w-3.5 h-3.5" aria-hidden /> Search tips &amp; column guide
           </button>
           {anyFilter && (
             <button type="button" onClick={clearFilters} className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400 hover:underline">
@@ -603,6 +588,12 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
             <div>Counts: <code>rd:&gt;10</code>, <code>rr:0</code>, <code>rdc:5-20</code>, <code>used:0</code>, <code>dyes:&gt;2</code></div>
             <div>Flags: <code>is:edited</code>, <code>has:comment</code>, <code>is:evolvable</code>, <code>is:customizable</code>, <code>is:future</code> (prefix <code>-</code> to negate)</div>
             <div>Wardrobe: <code>owned:yes</code>, <code>done:no</code>, <code>status:needed</code>, <code>is:waiting</code></div>
+            <dl className="sm:col-span-2 mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700 grid sm:grid-cols-2 gap-x-6 gap-y-1.5">
+              <dt className="sm:col-span-2 font-semibold text-zinc-700 dark:text-zinc-200">What the columns mean</dt>
+              {Object.entries(COLUMN_HELP).map(([k, v]) => (
+                <div key={k} className={k === 'Status' ? 'sm:col-span-2' : ''}><dt className="inline font-semibold">{k}: </dt><dd className="inline whitespace-pre-line">{v}</dd></div>
+              ))}
+            </dl>
           </div>
         )}
 
@@ -678,13 +669,13 @@ export default function DecomposeGuide({ items, meta, wardrobe, setWardrobe, loa
                   <SortHeader k="cat" label="Cat" />
                   <SortHeader k="n" label="No." />
                   <SortHeader k="r" label="Hearts" />
-                  <SortHeader k="status" label="Status" title="Derived from Owned and the items it is used for" />
-                  <SortHeader k="rd" label="Req." title="Required copies: recipes + evolutions (direct)" />
-                  <SortHeader k="rdc" label="+Dyes" title="Required including recolours (each recolour uses one base copy)" />
-                  <SortHeader k="rr" label="Tree" title="Required across the full crafting tree (recursive)" />
-                  <SortHeader k="used" label="Used" title="Number of items it is used to craft / evolve into" />
+                  <SortHeader k="status" label="Status" />
+                  <SortHeader k="rd" label="Req." />
+                  <SortHeader k="rdc" label="+Dyes" />
+                  <SortHeader k="rr" label="Tree" />
+                  <SortHeader k="used" label="Used" />
                   <SortHeader k="owned" label="Owned" />
-                  <th scope="col" className="px-2 py-3 text-left text-xs font-semibold tracking-wide text-zinc-500" title="Wishlist">Want</th>
+                  <th scope="col" className="px-2 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 cursor-help" title={COLUMN_HELP.Want}>Want</th>
                   <SortHeader k="done" label="Done" className="pr-5" />
                 </tr>
               </thead>

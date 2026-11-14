@@ -6,7 +6,7 @@ const FALLBACK_URL = 'https://fosgctjofhkshfseaxgp.supabase.co';
 const FALLBACK_KEY = 'sb_publishable_39bL2Q28IYQKr41fi9XNIg_hqo1BWxT';
 
 export const SUPABASE_URL: string = import.meta.env.VITE_SUPABASE_URL || FALLBACK_URL;
-const SUPABASE_KEY: string = import.meta.env.VITE_SUPABASE_ANON_KEY || FALLBACK_KEY;
+export const SUPABASE_KEY: string = import.meta.env.VITE_SUPABASE_ANON_KEY || FALLBACK_KEY;
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' },
@@ -49,6 +49,7 @@ export function friendlyError(e: unknown): string {
   if (code === '23505' || /duplicate key/i.test(msg)) return 'That username is already taken.';
   if (code === 'over_email_send_rate_limit' || /rate limit/i.test(msg)) return 'Too many emails sent recently. Please try again in an hour, or sign in with your password.';
   if (/Invalid login credentials/i.test(msg)) return 'Wrong email or password.';
+  if (/Unsupported provider|provider is not enabled/i.test(msg)) return 'That sign-in option is not set up yet.';
   if (/Email not confirmed/i.test(msg)) return 'This account is not activated yet. Please send us a message via Contact.';
   return msg;
 }
